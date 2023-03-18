@@ -2,7 +2,10 @@ package app
 
 import (
 	"fmt"
+	"github.com/access-io/access/pkg/ebpfs"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -30,13 +33,21 @@ func NewControllerCommand() *cobra.Command {
 			verflag.PrintAndExitIfRequested()
 			cliflag.PrintFlags(cmd.Flags())
 
+			if err := ebpfs.LoadMBProgs(); err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
+
 			c, err := s.Config()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
 
-			Run(c.Complete(), wait.NeverStop)
+			if err := Run(c.Complete(), wait.NeverStop); err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
 		},
 	}
 
@@ -55,29 +66,44 @@ func NewControllerCommand() *cobra.Command {
 }
 
 // Run runs the ControllerOptions.  This should never exit.
-func Run(c *config.CompletedConfig, stopCh <-chan struct{}) {
+func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v", version.Get())
 
+	if err := ebpfs.InitLoadPinnedMap(); err != nil {
+		return fmt.Errorf("failed to load ebpf maps: %v", err)
+	}
 	// new normal informer factory
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(c.Client, time.Second*30)
 	// new access informer factory
 	accessInformerFactory := accessinformers.NewSharedInformerFactory(c.AClient, time.Second*30)
 
 	// new controller
-	controller := accessctr.NewController(
-		c.Client,
+	controller, err := accessctr.NewController(
 		c.AClient,
 		accessInformerFactory.Sample().V1alpha1().Accesses(),
+		kubeInformerFactory.Core().V1().Nodes(),
 		c.EventRecorder,
 	)
+	if err != nil {
+		return err
+	}
 
 	go controller.Run(1, stopCh)
 
-	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(stopCh)
-	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
 	kubeInformerFactory.Start(stopCh)
 	accessInformerFactory.Start(stopCh)
 
-	select {}
+	if err = ebpfs.AttachMBProgs(); err != nil {
+		return fmt.Errorf("failed to attach ebpf programs: %v", err)
+	}
+
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
+	<-ch
+
+	if err = ebpfs.UnLoadMBProgs(); err != nil {
+		return fmt.Errorf("unload failed: %v", err)
+	}
+	return nil
 }

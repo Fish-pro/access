@@ -17,11 +17,11 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +genclient
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // Access is the Schema for the access api
@@ -48,9 +48,13 @@ type AccessSpec struct {
 	// +required
 	IPs []string `json:"ips"`
 
-	// NodeAffinity define the blacklist ips join node
-	// +required
-	NodeAffinity *v1.NodeAffinity `json:"nodeAffinity"`
+	// NodeSelector define the blacklist ips join node
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// nodeName define the blacklist ips join node name
+	// +optional
+	NodeName string `json:"nodeName,omitempty"`
 }
 
 // AccessStatus defines the observed state of Access
