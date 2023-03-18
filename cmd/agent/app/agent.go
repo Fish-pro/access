@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"github.com/access-io/access/pkg/ebpfs"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +20,7 @@ import (
 	"github.com/access-io/access/cmd/agent/app/config"
 	"github.com/access-io/access/cmd/agent/app/options"
 	accessctr "github.com/access-io/access/pkg/controllers/access"
+	"github.com/access-io/access/pkg/ebpfs"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions"
 )
 
