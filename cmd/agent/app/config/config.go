@@ -1,33 +1,25 @@
 package config
 
 import (
-	apiserver "k8s.io/apiserver/pkg/server"
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 
-	ctrlmgrConfig "github.com/access-io/access/pkg/apis/config"
+	"github.com/access-io/access/pkg/generated/clientset/versioned"
 )
 
-// Config is the main context object for the controller manager.
+// Config define global options and sub controller configuration
 type Config struct {
-	ComponentConfig ctrlmgrConfig.ControllerManagerConfiguration
-
-	SecureServing *apiserver.SecureServingInfo
-	// LoopbackClientConfig is a config for a privileged loopback connection
-	LoopbackClientConfig *restclient.Config
-
-	Authentication apiserver.AuthenticationInfo
-	Authorization  apiserver.AuthorizationInfo
-
 	// the general kube client
 	Client *clientset.Clientset
+
+	AClient versioned.Interface
 
 	// the rest config for the master
 	Kubeconfig *restclient.Config
 
-	EventBroadcaster record.EventBroadcaster
-	EventRecorder    record.EventRecorder
+	// the event sink
+	EventRecorder record.EventRecorder
 }
 
 type completedConfig struct {
@@ -43,8 +35,6 @@ type CompletedConfig struct {
 // Complete fills in any fields not set that are required to have valid data. It's mutating the receiver.
 func (c *Config) Complete() *CompletedConfig {
 	cc := completedConfig{c}
-
-	apiserver.AuthorizeClientBearerToken(c.LoopbackClientConfig, &c.Authentication, &c.Authorization)
 
 	return &CompletedConfig{&cc}
 }

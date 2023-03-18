@@ -1,184 +1,150 @@
-package access
+package resourcescounter
 
 import (
-	"context"
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	apierror "k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
-	"github.com/access-io/access/pkg/apis/access/v1alpha1"
-	accessclient "github.com/access-io/access/pkg/generated/clientset/versioned"
-	"github.com/access-io/access/pkg/generated/clientset/versioned/scheme"
+	"github.com/access-io/access/pkg/generated/clientset/versioned"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions/access/v1alpha1"
-	accesslister "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
+	accesslisters "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
 )
 
 const (
-	maxRetries     = 15
-	ControllerName = "access-controller"
+	controllerAgentName = "access-agent"
 )
 
-// NewAccessController returns a new *Controller.
-func NewAccessController(
-	kubeClient kubernetes.Interface,
-	client accessclient.Interface,
-	accessInformer accessinformers.AccessInformer) (*Controller, error) {
-	broadcaster := record.NewBroadcaster()
-	recorder := broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: ControllerName})
-
-	r := &Controller{
-		kubeClient:       kubeClient,
-		client:           client,
-		accessLister:     accessInformer.Lister(),
-		accessSynced:     accessInformer.Informer().HasSynced,
-		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "access"),
-		workerLoopPeriod: time.Second,
-		eventBroadcaster: broadcaster,
-		eventRecorder:    recorder,
-	}
-
-	accessInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    r.addAccess,
-		UpdateFunc: r.updateAccess,
-		DeleteFunc: r.deleteAccess,
-	})
-
-	return r, nil
-}
-
+// Controller define the option of controller
 type Controller struct {
-	kubeClient       kubernetes.Interface
-	client           accessclient.Interface
-	eventBroadcaster record.EventBroadcaster
-	eventRecorder    record.EventRecorder
+	client  kubernetes.Interface
+	aClient versioned.Interface
 
-	accessLister accesslister.AccessLister
-	accessSynced cache.InformerSynced
+	informer accessinformers.AccessInformer
+	lister   accesslisters.AccessLister
 
-	queue workqueue.RateLimitingInterface
+	workqueue workqueue.RateLimitingInterface
+	synced    cache.InformerSynced
 
-	workerLoopPeriod time.Duration
+	// recorder is an event recorder for recording Event resources to the
+	// Kubernetes API.
+	recorder record.EventRecorder
 }
 
-// Run will not return until stopCh is closed. workers determines how many
-// access will be handled in parallel.
-func (r *Controller) Run(ctx context.Context, workers int) {
+// NewController return a controller and add event handler
+func NewController(
+	client kubernetes.Interface,
+	aClient versioned.Interface,
+	informer accessinformers.AccessInformer,
+	recorder record.EventRecorder) *Controller {
+
+	klog.V(4).Info("Creating event broadcaster")
+
+	controller := &Controller{
+		client:    client,
+		aClient:   aClient,
+		lister:    informer.Lister(),
+		informer:  informer,
+		recorder:  recorder,
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
+	}
+
+	klog.Info("Setting up event handlers")
+	informer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			controller.enqueue(obj)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			controller.enqueue(newObj)
+		},
+		DeleteFunc: func(obj interface{}) {
+			controller.enqueue(obj)
+		},
+	}, time.Second*30)
+
+	return controller
+}
+
+// Run worker and sync the queue obj to self logic
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
+	defer c.workqueue.ShutDown()
 
-	// Start events processing pipelinr.
-	r.eventBroadcaster.StartStructuredLogging(0)
-	r.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: r.kubeClient.CoreV1().Events("")})
-	defer r.eventBroadcaster.Shutdown()
+	// Start the informer factories to begin populating the informer caches
+	klog.Info("Starting resources counter controller")
 
-	defer r.queue.ShutDown()
-
-	klog.Infof("Starting access controller")
-	defer klog.Infof("Shutting down access controller")
-
-	if !cache.WaitForNamedCacheSync("access", ctx.Done(), r.accessSynced) {
-		return
+	// Wait for the caches to be synced before starting workers
+	klog.Info("Waiting for informer caches to sync")
+	if ok := cache.WaitForCacheSync(stopCh, c.synced); !ok {
+		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
-	for i := 0; i < workers; i++ {
-		go wait.UntilWithContext(ctx, r.worker, r.workerLoopPeriod)
+	klog.Info("Starting workers")
+	// Launch two workers to process ServiceAccount resources
+	for i := 0; i < threadiness; i++ {
+		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
-	<-ctx.Done()
+
+	klog.Info("Started workers")
+	<-stopCh
+	klog.Info("Shutting down workers")
+
+	return nil
 }
 
-// worker runs a worker thread that just dequeues items, processes them, and
-// marks them done. You may run as many of these in parallel as you wish; the
-// workqueue guarantees that they will not end up processing the same service
-// at the same time.
-func (r *Controller) worker(ctx context.Context) {
-	for r.processNextWorkItem(ctx) {
+// runWorker wait obj by workerqueue
+func (c *Controller) runWorker() {
+	for c.processNextWorkItem() {
 	}
 }
 
-func (r *Controller) processNextWorkItem(ctx context.Context) bool {
-	key, quit := r.queue.Get()
-	if quit {
+// if resource change, run this func to count resources
+func (c *Controller) processNextWorkItem() bool {
+	obj, shutdown := c.workqueue.Get()
+
+	if shutdown {
 		return false
 	}
-	defer r.queue.Done(key)
 
-	err := r.syncAccess(ctx, key.(string))
-	r.handleErr(err, key)
+	err := func(obj interface{}) error {
+		defer c.workqueue.Done(obj)
+
+		key, ok := obj.(string)
+		if !ok {
+			c.workqueue.Forget(obj)
+			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
+			return nil
+		}
+		if err := c.syncHandler(key); err != nil {
+			c.workqueue.AddRateLimited(key)
+			return fmt.Errorf("error syncing '%s': %s, requeuing", key, err.Error())
+		}
+		c.workqueue.Forget(obj)
+		klog.Infof("Successfully synced '%s'", key)
+		return nil
+	}(obj)
+
+	if err != nil {
+		utilruntime.HandleError(err)
+		return true
+	}
 
 	return true
 }
 
-func (r *Controller) addAccess(obj interface{}) {
-	a := obj.(*v1alpha1.Access)
-	klog.V(4).InfoS("Adding access", "access", klog.KObj(a))
-	r.enqueue(a)
-}
-
-func (r *Controller) updateAccess(old, cur interface{}) {
-	oldAccess := old.(*v1alpha1.Access)
-	curAccess := cur.(*v1alpha1.Access)
-	klog.V(4).InfoS("Updating access", "access", klog.KObj(oldAccess))
-	r.enqueue(curAccess)
-}
-
-func (r *Controller) deleteAccess(obj interface{}) {
-	a, ok := obj.(*v1alpha1.Access)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
-			return
-		}
-		a, ok = tombstone.Obj.(*v1alpha1.Access)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Access %#v", obj))
-			return
-		}
-	}
-	klog.V(4).InfoS("Deleting access", "access", klog.KObj(a))
-	r.enqueue(a)
-}
-
-func (r *Controller) enqueue(a *v1alpha1.Access) {
-	key, err := cache.MetaNamespaceKeyFunc(a)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	r.queue.Add(key)
-}
-
-func (r *Controller) handleErr(err error, key interface{}) {
-	if err == nil || apierror.HasStatusCause(err, corev1.NamespaceTerminatingCause) {
-		r.queue.Forget(key)
-		return
-	}
-
-	ns, name, keyErr := cache.SplitMetaNamespaceKey(key.(string))
-	if keyErr != nil {
-		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
-	}
-
-	if r.queue.NumRequeues(key) < maxRetries {
-		klog.V(2).InfoS("Error syncing access, retrying", "access", klog.KRef(ns, name), "err", err)
-		r.queue.AddRateLimited(key)
-		return
-	}
-
-	utilruntime.HandleError(err)
-	klog.V(2).InfoS("Dropping access out of the queue", "access", klog.KRef(ns, name), "err", err)
-	r.queue.Forget(key)
-}
-
-func (r *Controller) syncAccess(ctx context.Context, key string) error {
+// syncHandler
+func (c *Controller) syncHandler(key string) error {
 	return nil
+}
+
+// cannot find resource kind from obj,so we need case all gvr
+func (c *Controller) enqueue(obj interface{}) {
+	key := ""
+	c.workqueue.Add(key)
 }

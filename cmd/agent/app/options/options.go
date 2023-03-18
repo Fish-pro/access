@@ -1,95 +1,64 @@
 package options
 
 import (
-	"fmt"
-	"net"
-	"time"
-
+	"github.com/access-io/access/pkg/builder"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	apiserveroptions "k8s.io/apiserver/pkg/server/options"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	cliflag "k8s.io/component-base/cli/flag"
-	"k8s.io/component-base/logs"
-	logsapi "k8s.io/component-base/logs/api/v1"
-	"k8s.io/component-base/metrics"
-	"k8s.io/controller-manager/config"
-	cmoptions "k8s.io/controller-manager/options"
-	netutils "k8s.io/utils/net"
+	"k8s.io/klog/v2"
 
-	controllerconfig "github.com/access-io/access/cmd/agent/app/config"
-	ctrlmgrconfig "github.com/access-io/access/pkg/apis/config"
+	"github.com/access-io/access/cmd/agent/app/config"
 )
 
-// ControllerManagerOptions is the main context object for the mca-controller-manager.
-type ControllerManagerOptions struct {
-	Generic *cmoptions.GenericControllerManagerConfigurationOptions
+const (
+	ControllerUserAgent = "access-agent"
+)
 
-	SecureServing  *apiserveroptions.SecureServingOptionsWithLoopback
-	Authentication *apiserveroptions.DelegatingAuthenticationOptions
-	Authorization  *apiserveroptions.DelegatingAuthorizationOptions
-	Metrics        *metrics.Options
-	Logs           *logs.Options
-
+// ControllerOptions is the main context object for the resources-counter-controller controllers.
+type ControllerOptions struct {
 	Master     string
 	Kubeconfig string
 }
 
-// NewControllerManagerOptions creates a new ControllerManagerOptions with a default config.
-func NewControllerManagerOptions() (*ControllerManagerOptions, error) {
-	componentConfig, err := NewDefaultComponentConfig()
+// NewControllerOptions return all options of controller
+func NewControllerOptions() *ControllerOptions {
+	return &ControllerOptions{}
+}
+
+// Config return a controller config objective
+func (s *ControllerOptions) Config() (*config.Config, error) {
+	kubeconfig, err := clientcmd.BuildConfigFromFlags(s.Master, s.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
 
-	s := ControllerManagerOptions{
-		Generic: cmoptions.NewGenericControllerManagerConfigurationOptions(&componentConfig.Generic),
-
-		SecureServing:  apiserveroptions.NewSecureServingOptions().WithLoopback(),
-		Authentication: apiserveroptions.NewDelegatingAuthenticationOptions(),
-		Authorization:  apiserveroptions.NewDelegatingAuthorizationOptions(),
-		Metrics:        metrics.NewOptions(),
-		Logs:           logs.NewOptions(),
+	client, err := clientset.NewForConfig(restclient.AddUserAgent(kubeconfig, ControllerUserAgent))
+	if err != nil {
+		return nil, err
 	}
 
-	// Set the PairName but leave certificate directory blank to generate in-memory by default
-	s.SecureServing.ServerCert.CertDirectory = ""
-	s.SecureServing.ServerCert.PairName = "application-controller-manager"
-	s.SecureServing.BindPort = 10777
+	clientBuilder := builder.NewSimpleAccessControllerClientBuilder(kubeconfig)
 
-	s.Generic.LeaderElection.ResourceName = "mca-controller-manager"
-	s.Generic.LeaderElection.ResourceNamespace = "mca-system"
-	return &s, nil
-}
+	eventRecorder := createRecorder(client, ControllerUserAgent)
 
-func NewDefaultComponentConfig() (ctrlmgrconfig.ControllerManagerConfiguration, error) {
-	internal := ctrlmgrconfig.ControllerManagerConfiguration{
-		Generic: config.GenericControllerManagerConfiguration{
-			Address:                 "0.0.0.0",
-			Controllers:             []string{"*"},
-			MinResyncPeriod:         metav1.Duration{Duration: 12 * time.Hour},
-			ControllerStartInterval: metav1.Duration{Duration: 0 * time.Second},
-		},
+	c := &config.Config{
+		Client:        client,
+		AClient:       clientBuilder.AccessClientOrDie(ControllerUserAgent),
+		Kubeconfig:    kubeconfig,
+		EventRecorder: eventRecorder,
 	}
-	return internal, nil
+
+	return c, nil
 }
 
 // Flags returns flags for a specific APIServer by section name
-func (s *ControllerManagerOptions) Flags(allControllers []string, disabledByDefaultControllers []string) cliflag.NamedFlagSets {
+func (s *ControllerOptions) Flags() cliflag.NamedFlagSets {
 	fss := cliflag.NamedFlagSets{}
-	s.Generic.AddFlags(&fss, allControllers, disabledByDefaultControllers)
-
-	s.SecureServing.AddFlags(fss.FlagSet("secure serving"))
-	s.Authentication.AddFlags(fss.FlagSet("authentication"))
-	s.Authorization.AddFlags(fss.FlagSet("authorization"))
-
-	s.Metrics.AddFlags(fss.FlagSet("metrics"))
-	logsapi.AddFlags(s.Logs, fss.FlagSet("logs"))
 
 	fs := fss.FlagSet("misc")
 	fs.StringVar(&s.Master, "master", s.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig).")
@@ -98,69 +67,10 @@ func (s *ControllerManagerOptions) Flags(allControllers []string, disabledByDefa
 	return fss
 }
 
-// ApplyTo fills up controller manager config with options.
-func (s *ControllerManagerOptions) ApplyTo(c *controllerconfig.Config) error {
-	if err := s.Generic.ApplyTo(&c.ComponentConfig.Generic); err != nil {
-		return err
-	}
-	if err := s.SecureServing.ApplyTo(&c.SecureServing, &c.LoopbackClientConfig); err != nil {
-		return err
-	}
-	if s.SecureServing.BindPort != 0 || s.SecureServing.Listener != nil {
-		if err := s.Authentication.ApplyTo(&c.Authentication, c.SecureServing, nil); err != nil {
-			return err
-		}
-		if err := s.Authorization.ApplyTo(&c.Authorization); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Validate is used to validate the options and config before launching the controller manager
-func (s *ControllerManagerOptions) Validate(allControllers []string, disabledByDefaultControllers []string) error {
-	var errs []error
-	return utilerrors.NewAggregate(errs)
-}
-
-// Config return a controller manager config objective
-func (s ControllerManagerOptions) Config(allControllers []string, disabledByDefaultControllers []string) (*controllerconfig.Config, error) {
-	if err := s.Validate(allControllers, disabledByDefaultControllers); err != nil {
-		return nil, err
-	}
-
-	if err := s.SecureServing.MaybeDefaultWithSelfSignedCerts("localhost", nil, []net.IP{netutils.ParseIPSloppy("127.0.0.1")}); err != nil {
-		return nil, fmt.Errorf("error creating self-signed certificates: %v", err)
-	}
-
-	kubeconfig, err := clientcmd.BuildConfigFromFlags(s.Master, s.Kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	kubeconfig.DisableCompression = true
-	kubeconfig.ContentConfig.AcceptContentTypes = s.Generic.ClientConnection.AcceptContentTypes
-	kubeconfig.ContentConfig.ContentType = s.Generic.ClientConnection.ContentType
-	kubeconfig.QPS = s.Generic.ClientConnection.QPS
-	kubeconfig.Burst = int(s.Generic.ClientConnection.Burst)
-
-	client, err := clientset.NewForConfig(restclient.AddUserAgent(kubeconfig, "access-agent"))
-	if err != nil {
-		return nil, err
-	}
-
+// createRecorder return a event recorder
+func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
 	eventBroadcaster := record.NewBroadcaster()
-	eventRecorder := eventBroadcaster.NewRecorder(clientgokubescheme.Scheme, v1.EventSource{Component: "access-agent"})
-
-	c := &controllerconfig.Config{
-		Client:           client,
-		Kubeconfig:       kubeconfig,
-		EventBroadcaster: eventBroadcaster,
-		EventRecorder:    eventRecorder,
-	}
-	if err := s.ApplyTo(c); err != nil {
-		return nil, err
-	}
-	s.Metrics.Apply()
-
-	return c, nil
+	eventBroadcaster.StartLogging(klog.Infof)
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	return eventBroadcaster.NewRecorder(clientgokubescheme.Scheme, v1.EventSource{Component: userAgent})
 }

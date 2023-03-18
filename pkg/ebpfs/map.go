@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The Mca Authors.
+Copyright © 2022 Merbridge Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,17 +14,32 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package ebpfs
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	cmconfig "k8s.io/controller-manager/config"
+	"fmt"
+
+	"github.com/cilium/ebpf"
 )
 
-// ControllerManagerConfiguration contains elements describing application-controller manager.
-type ControllerManagerConfiguration struct {
-	metav1.TypeMeta
+const BlacklistIps = "/sys/fs/bpf/local_bl_ips"
 
-	// Generic holds configuration for a generic controller-manager
-	Generic cmconfig.GenericControllerManagerConfiguration
+var (
+	blacklistIpsMap *ebpf.Map
+)
+
+func InitLoadPinnedMap() error {
+	var err error
+	blacklistIpsMap, err = ebpf.LoadPinnedMap(BlacklistIps, &ebpf.LoadPinOptions{})
+	if err != nil {
+		return fmt.Errorf("load map error: %v", err)
+	}
+	return nil
+}
+
+func GetBlacklistIpsMap() *ebpf.Map {
+	if blacklistIpsMap == nil {
+		_ = InitLoadPinnedMap()
+	}
+	return blacklistIpsMap
 }
