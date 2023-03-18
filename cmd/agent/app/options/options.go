@@ -1,8 +1,7 @@
 package options
 
 import (
-	"github.com/access-io/access/pkg/builder"
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -13,6 +12,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/access-io/access/cmd/agent/app/config"
+	"github.com/access-io/access/pkg/builder"
 )
 
 const (

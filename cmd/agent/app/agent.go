@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"k8s.io/klog/v2"
 	"os"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"k8s.io/component-base/term"
 	"k8s.io/component-base/version"
 	"k8s.io/component-base/version/verflag"
+	"k8s.io/klog/v2"
 
 	"github.com/access-io/access/cmd/agent/app/config"
 	"github.com/access-io/access/cmd/agent/app/options"
