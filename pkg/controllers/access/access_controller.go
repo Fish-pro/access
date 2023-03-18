@@ -24,9 +24,8 @@ import (
 )
 
 const (
-	maxRetries              = 15
-	ControllerFinalizerName = "sample.access.io/finalizer"
-	ControllerName          = "access-controller"
+	maxRetries     = 15
+	ControllerName = "access-controller"
 )
 
 // NewAccessController returns a new *Controller.
@@ -49,9 +48,9 @@ func NewAccessController(
 	}
 
 	accessInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    r.addApplication,
-		UpdateFunc: r.updateApplication,
-		DeleteFunc: r.deleteApplication,
+		AddFunc:    r.addAccess,
+		UpdateFunc: r.updateAccess,
+		DeleteFunc: r.deleteAccess,
 	})
 
 	return r, nil
@@ -66,14 +65,8 @@ type Controller struct {
 	accessLister accesslister.AccessLister
 	accessSynced cache.InformerSynced
 
-	// Application that need to be updated. A channel is inappropriate here,
-	// because it allows services with lots of pods to be serviced much
-	// more often than services with few pods; it also would cause a
-	// service that's inserted multiple times to be processed more than
-	// necessary.
 	queue workqueue.RateLimitingInterface
 
-	// workerLoopPeriod is the time between worker runs. The workers process the queue of service and pod changes.
 	workerLoopPeriod time.Duration
 }
 
@@ -118,26 +111,26 @@ func (r *Controller) processNextWorkItem(ctx context.Context) bool {
 	}
 	defer r.queue.Done(key)
 
-	err := r.syncApplication(ctx, key.(string))
+	err := r.syncAccess(ctx, key.(string))
 	r.handleErr(err, key)
 
 	return true
 }
 
-func (r *Controller) addApplication(obj interface{}) {
+func (r *Controller) addAccess(obj interface{}) {
 	a := obj.(*v1alpha1.Access)
 	klog.V(4).InfoS("Adding access", "access", klog.KObj(a))
 	r.enqueue(a)
 }
 
-func (r *Controller) updateApplication(old, cur interface{}) {
-	oldApplication := old.(*v1alpha1.Access)
-	curApplication := cur.(*v1alpha1.Access)
-	klog.V(4).InfoS("Updating access", "access", klog.KObj(oldApplication))
-	r.enqueue(curApplication)
+func (r *Controller) updateAccess(old, cur interface{}) {
+	oldAccess := old.(*v1alpha1.Access)
+	curAccess := cur.(*v1alpha1.Access)
+	klog.V(4).InfoS("Updating access", "access", klog.KObj(oldAccess))
+	r.enqueue(curAccess)
 }
 
-func (r *Controller) deleteApplication(obj interface{}) {
+func (r *Controller) deleteAccess(obj interface{}) {
 	a, ok := obj.(*v1alpha1.Access)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -147,7 +140,7 @@ func (r *Controller) deleteApplication(obj interface{}) {
 		}
 		a, ok = tombstone.Obj.(*v1alpha1.Access)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Application %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Access %#v", obj))
 			return
 		}
 	}
@@ -186,6 +179,6 @@ func (r *Controller) handleErr(err error, key interface{}) {
 	r.queue.Forget(key)
 }
 
-func (r *Controller) syncApplication(ctx context.Context, key string) error {
+func (r *Controller) syncAccess(ctx context.Context, key string) error {
 	return nil
 }

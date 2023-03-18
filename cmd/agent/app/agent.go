@@ -1,19 +1,3 @@
-/*
-Copyright 2022 The Mca Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package app
 
 import (
@@ -73,7 +57,7 @@ func init() {
 const (
 	// ControllerStartJitter is the Jitter used when starting controller managers
 	ControllerStartJitter = 1.0
-	// ConfigzName is the name used for register application-controller manager /configz, same with GroupName.
+	// ConfigzName is the name used for register access-controller manager /configz, same with GroupName.
 	ConfigzName = "sample.k8s.io"
 )
 
@@ -85,7 +69,7 @@ func NewAccessAgentCommand() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:  "access-agent",
-		Long: `long`,
+		Long: `Manage IP policies on the cluster through the kubernetes native API`,
 		PersistentPreRunE: func(*cobra.Command, []string) error {
 			// silence client-go warnings.
 			// kube-controller-manager generically watches APIs (including deprecated ones),
@@ -333,7 +317,7 @@ type InitFunc func(ctx context.Context, controllerCtx ControllerContext) (contro
 // ControllerInitializersFunc is used to create a collection of initializers.
 type ControllerInitializersFunc func() (initializers map[string]InitFunc)
 
-// KnownControllers returns all known controllers's name
+// KnownControllers returns all known controller's name
 func KnownControllers() []string {
 	ret := sets.StringKeySet(NewControllerInitializers())
 	return ret.List()
@@ -357,7 +341,7 @@ func startAccessController(ctx context.Context, controllerContext ControllerCont
 		controllerContext.AccessInformerFactory.Sample().V1alpha1().Accesses(),
 	)
 	if err != nil {
-		return nil, true, fmt.Errorf("failed to start the application controller: %v", err)
+		return nil, true, fmt.Errorf("failed to start the access controller: %v", err)
 	}
 	go ctrl.Run(ctx, 1)
 	return nil, true, nil
@@ -396,14 +380,14 @@ func GetAvailableResources(clientBuilder builder.AccessControllerClientBuilder) 
 // controllers such as the cloud provider and clientBuilder. rootClientBuilder is only used for
 // the shared-informers client and token controller.
 func CreateControllerContext(s *config.CompletedConfig, clientBuilder builder.AccessControllerClientBuilder, stop <-chan struct{}) (ControllerContext, error) {
-	versionedClient := clientBuilder.ClientOrDie("application-kube-shared-informers")
+	versionedClient := clientBuilder.ClientOrDie("access-kube-shared-informers")
 	kubeSharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
-	clientConfig := clientBuilder.ConfigOrDie("application-shared-informers")
+	clientConfig := clientBuilder.ConfigOrDie("access-shared-informers")
 	client := accessversioned.NewForConfigOrDie(clientConfig)
 	accessInformer := accessinformers.NewSharedInformerFactory(client, ResyncPeriod(s)())
 
-	metadataClient := metadata.NewForConfigOrDie(clientBuilder.ConfigOrDie("application-metadata-informers"))
+	metadataClient := metadata.NewForConfigOrDie(clientBuilder.ConfigOrDie("access-metadata-informers"))
 	metadataInformers := metadatainformer.NewSharedInformerFactory(metadataClient, ResyncPeriod(s)())
 
 	// If apiserver is not running we should wait for some time and fail only then. This is particularly

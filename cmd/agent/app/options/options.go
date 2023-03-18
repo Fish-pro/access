@@ -1,19 +1,3 @@
-/*
-Copyright 2022 The Mca Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package options
 
 import (
@@ -42,8 +26,8 @@ import (
 	ctrlmgrconfig "github.com/access-io/access/pkg/apis/config"
 )
 
-// McaControllerManagerOptions is the main context object for the mca-controller-manager.
-type McaControllerManagerOptions struct {
+// ControllerManagerOptions is the main context object for the mca-controller-manager.
+type ControllerManagerOptions struct {
 	Generic *cmoptions.GenericControllerManagerConfigurationOptions
 
 	SecureServing  *apiserveroptions.SecureServingOptionsWithLoopback
@@ -56,14 +40,14 @@ type McaControllerManagerOptions struct {
 	Kubeconfig string
 }
 
-// NewControllerManagerOptions creates a new McaControllerManagerOptions with a default config.
-func NewControllerManagerOptions() (*McaControllerManagerOptions, error) {
+// NewControllerManagerOptions creates a new ControllerManagerOptions with a default config.
+func NewControllerManagerOptions() (*ControllerManagerOptions, error) {
 	componentConfig, err := NewDefaultComponentConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	s := McaControllerManagerOptions{
+	s := ControllerManagerOptions{
 		Generic: cmoptions.NewGenericControllerManagerConfigurationOptions(&componentConfig.Generic),
 
 		SecureServing:  apiserveroptions.NewSecureServingOptions().WithLoopback(),
@@ -96,7 +80,7 @@ func NewDefaultComponentConfig() (ctrlmgrconfig.ControllerManagerConfiguration, 
 }
 
 // Flags returns flags for a specific APIServer by section name
-func (s *McaControllerManagerOptions) Flags(allControllers []string, disabledByDefaultControllers []string) cliflag.NamedFlagSets {
+func (s *ControllerManagerOptions) Flags(allControllers []string, disabledByDefaultControllers []string) cliflag.NamedFlagSets {
 	fss := cliflag.NamedFlagSets{}
 	s.Generic.AddFlags(&fss, allControllers, disabledByDefaultControllers)
 
@@ -115,7 +99,7 @@ func (s *McaControllerManagerOptions) Flags(allControllers []string, disabledByD
 }
 
 // ApplyTo fills up controller manager config with options.
-func (s *McaControllerManagerOptions) ApplyTo(c *controllerconfig.Config) error {
+func (s *ControllerManagerOptions) ApplyTo(c *controllerconfig.Config) error {
 	if err := s.Generic.ApplyTo(&c.ComponentConfig.Generic); err != nil {
 		return err
 	}
@@ -134,13 +118,13 @@ func (s *McaControllerManagerOptions) ApplyTo(c *controllerconfig.Config) error 
 }
 
 // Validate is used to validate the options and config before launching the controller manager
-func (s *McaControllerManagerOptions) Validate(allControllers []string, disabledByDefaultControllers []string) error {
+func (s *ControllerManagerOptions) Validate(allControllers []string, disabledByDefaultControllers []string) error {
 	var errs []error
 	return utilerrors.NewAggregate(errs)
 }
 
 // Config return a controller manager config objective
-func (s McaControllerManagerOptions) Config(allControllers []string, disabledByDefaultControllers []string) (*controllerconfig.Config, error) {
+func (s ControllerManagerOptions) Config(allControllers []string, disabledByDefaultControllers []string) (*controllerconfig.Config, error) {
 	if err := s.Validate(allControllers, disabledByDefaultControllers); err != nil {
 		return nil, err
 	}
