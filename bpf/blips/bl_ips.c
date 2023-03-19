@@ -4,11 +4,11 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct bpf_map_def SEC("maps") blacklist = {
+struct bpf_elf_map SEC("maps") blacklist = {
     .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(u32),
-    .value_size = sizeof(u8),
-    .max_entries = 100000,
+    .size_key = sizeof(u32),
+    .size_value = sizeof(u8),
+    .max_elem = 100000,
 };
 
 struct arp_t {
