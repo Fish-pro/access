@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/cli/globalflag"
@@ -17,10 +16,10 @@ import (
 	"k8s.io/component-base/version/verflag"
 	"k8s.io/klog/v2"
 
+	blips "github.com/access-io/access/bpf/blIps"
 	"github.com/access-io/access/cmd/agent/app/config"
 	"github.com/access-io/access/cmd/agent/app/options"
 	accessctr "github.com/access-io/access/pkg/controllers/access"
-	"github.com/access-io/access/pkg/ebpfs"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions"
 )
 
@@ -33,18 +32,13 @@ func NewControllerCommand() *cobra.Command {
 			verflag.PrintAndExitIfRequested()
 			cliflag.PrintFlags(cmd.Flags())
 
-			if err := ebpfs.LoadMBProgs(); err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-
 			c, err := s.Config()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
 
-			if err := Run(c.Complete(), wait.NeverStop); err != nil {
+			if err := Run(c.Complete()); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -66,13 +60,21 @@ func NewControllerCommand() *cobra.Command {
 }
 
 // Run runs the ControllerOptions.  This should never exit.
-func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
+func Run(c *config.CompletedConfig) error {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v", version.Get())
 
-	if err := ebpfs.InitLoadPinnedMap(); err != nil {
-		return fmt.Errorf("failed to load ebpf maps: %v", err)
+	stopCh := c.Ctx.Done()
+	defer c.Cancel()
+
+	// attach ebpf program
+	engine, err := blips.NewEbpfEngine()
+	if err != nil {
+		klog.Errorf("failed to run controller: %w", err)
+		return err
 	}
+	defer engine.Close()
+
 	// new normal informer factory
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(c.Client, time.Second*30)
 	// new access informer factory
@@ -80,10 +82,12 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	// new controller
 	controller, err := accessctr.NewController(
+		c.Ctx,
 		c.AClient,
 		accessInformerFactory.Sample().V1alpha1().Accesses(),
 		kubeInformerFactory.Core().V1().Nodes(),
 		c.EventRecorder,
+		engine,
 	)
 	if err != nil {
 		return err
@@ -94,16 +98,10 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	kubeInformerFactory.Start(stopCh)
 	accessInformerFactory.Start(stopCh)
 
-	if err = ebpfs.AttachMBProgs(); err != nil {
-		return fmt.Errorf("failed to attach ebpf programs: %v", err)
-	}
+	quit := make(chan os.Signal)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	klog.Info("ctrl + c shutdown process ...")
 
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
-	<-ch
-
-	if err = ebpfs.UnLoadMBProgs(); err != nil {
-		return fmt.Errorf("unload failed: %v", err)
-	}
 	return nil
 }

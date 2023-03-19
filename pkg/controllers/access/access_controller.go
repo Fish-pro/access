@@ -21,8 +21,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
+	"github.com/access-io/access/bpf/blips"
 	accessv1alpha1 "github.com/access-io/access/pkg/apis/access/v1alpha1"
-	"github.com/access-io/access/pkg/ebpfs"
 	"github.com/access-io/access/pkg/generated/clientset/versioned"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions/access/v1alpha1"
 	accesslisters "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
@@ -34,6 +34,7 @@ const (
 
 // Controller define the option of controller
 type Controller struct {
+	ctx    context.Context
 	client versioned.Interface
 
 	lister     accesslisters.AccessLister
@@ -43,6 +44,8 @@ type Controller struct {
 	accessSynced cache.InformerSynced
 	nodeSynced   cache.InformerSynced
 
+	engine *blips.EbpfEngine
+
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
@@ -50,18 +53,22 @@ type Controller struct {
 
 // NewController return a controller and add event handler
 func NewController(
+	ctx context.Context,
 	client versioned.Interface,
 	informer accessinformers.AccessInformer,
 	nodeInformer coreinformers.NodeInformer,
-	recorder record.EventRecorder) (*Controller, error) {
+	recorder record.EventRecorder,
+	engine *blips.EbpfEngine) (*Controller, error) {
 
 	klog.V(4).Info("Creating event broadcaster")
 
 	controller := &Controller{
+		ctx:          ctx,
 		client:       client,
 		lister:       informer.Lister(),
 		nodeLister:   nodeInformer.Lister(),
 		recorder:     recorder,
+		engine:       engine,
 		accessSynced: informer.Informer().HasSynced,
 		nodeSynced:   nodeInformer.Informer().HasSynced,
 		queue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
@@ -168,7 +175,8 @@ func (c *Controller) syncHandler(key string) error {
 
 	if !access.DeletionTimestamp.IsZero() {
 		for _, ip := range access.Spec.IPs {
-			if err := ebpfs.GetBlacklistIpsMap().Delete(ip); err != nil {
+			var value string
+			if err := c.engine.BpfObjs.Blacklist.LookupAndDelete(ip, &value); err != nil {
 				return err
 			}
 		}
@@ -186,7 +194,7 @@ func (c *Controller) syncHandler(key string) error {
 	}
 
 	for _, ip := range access.Spec.IPs {
-		if err := ebpfs.GetBlacklistIpsMap().Update(ip, "", ebpf.UpdateAny); err != nil {
+		if err := c.engine.BpfObjs.Blacklist.Update(ip, "", ebpf.UpdateAny); err != nil {
 			return err
 		}
 	}
@@ -200,7 +208,7 @@ func (c *Controller) setFinalizer(access *accessv1alpha1.Access) error {
 	}
 
 	access.Finalizers = append(access.Finalizers, controllerAgentName)
-	_, err := c.client.SampleV1alpha1().Accesses().Update(context.TODO(), access, metav1.UpdateOptions{})
+	_, err := c.client.SampleV1alpha1().Accesses().Update(c.ctx, access, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
@@ -214,7 +222,7 @@ func (c *Controller) removeFinalizer(access *accessv1alpha1.Access) error {
 	}
 
 	access.Finalizers = []string{}
-	_, err := c.client.SampleV1alpha1().Accesses().Update(context.TODO(), access, metav1.UpdateOptions{})
+	_, err := c.client.SampleV1alpha1().Accesses().Update(c.ctx, access, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
