@@ -59,7 +59,6 @@ func NewController(
 	nodeInformer coreinformers.NodeInformer,
 	recorder record.EventRecorder,
 	engine *blips.EbpfEngine) (*Controller, error) {
-
 	klog.V(4).Info("Creating event broadcaster")
 
 	controller := &Controller{
@@ -164,8 +163,7 @@ func (c *Controller) processNextWorkItem() bool {
 func (c *Controller) syncHandler(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		return err
 	}
 
 	access, err := c.lister.Get(name)

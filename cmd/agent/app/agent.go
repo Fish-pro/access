@@ -16,7 +16,7 @@ import (
 	"k8s.io/component-base/version/verflag"
 	"k8s.io/klog/v2"
 
-	blips "github.com/access-io/access/bpf/blIps"
+	"github.com/access-io/access/bpf/blips"
 	"github.com/access-io/access/cmd/agent/app/config"
 	"github.com/access-io/access/cmd/agent/app/options"
 	accessctr "github.com/access-io/access/pkg/controllers/access"
