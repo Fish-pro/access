@@ -251,6 +251,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
 
+// updateAccessStatusInNeed update status if you need
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
 	if !reflect.DeepEqual(access.Status, status) {
 		access.Status = status
@@ -300,6 +301,26 @@ func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1
 	return nil
 }
 
+// mapKeyList return ebpf map keys
+func mapKeyList(m *ebpf.Map) (keys []string, err error) {
+	var key, oldKey string
+	err = m.NextKey(nil, &oldKey)
+	if err != nil {
+		return keys, err
+	}
+	keys = append(keys, oldKey)
+	for i := 0; i <= int(m.MaxEntries()); i++ {
+		err = m.NextKey(oldKey, &key)
+		if err != nil {
+			break
+		}
+		keys = append(keys, key)
+		oldKey = key
+	}
+
+	return keys, nil
+}
+
 // cannot find resource kind from obj,so we need case all gvr
 func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
@@ -321,23 +342,4 @@ func (c *Controller) enqueue(obj interface{}) {
 		return
 	}
 	c.queue.Add(key)
-}
-
-func mapKeyList(m *ebpf.Map) (keys []string, err error) {
-	var key, oldKey string
-	err = m.NextKey(nil, &oldKey)
-	if err != nil {
-		return keys, err
-	}
-	keys = append(keys, oldKey)
-	for i := 0; i <= int(m.MaxEntries()); i++ {
-		err = m.NextKey(oldKey, &key)
-		if err != nil {
-			break
-		}
-		keys = append(keys, key)
-		oldKey = key
-	}
-
-	return keys, nil
 }
