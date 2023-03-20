@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -311,8 +312,10 @@ func mapKeyList(m *ebpf.Map) (keys []string, err error) {
 	keys = append(keys, oldKey)
 	for i := 0; i <= int(m.MaxEntries()); i++ {
 		err = m.NextKey(oldKey, &key)
-		if err != nil {
+		if errors.Is(err, ebpf.ErrKeyNotExist) {
 			break
+		} else if err != nil {
+			return keys, err
 		}
 		keys = append(keys, key)
 		oldKey = key
