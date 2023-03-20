@@ -23,7 +23,7 @@ import (
 
 	"github.com/access-io/access/bpf/blips"
 	accessv1alpha1 "github.com/access-io/access/pkg/apis/access/v1alpha1"
-	"github.com/access-io/access/pkg/generated/clientset/versioned"
+	accessversioned "github.com/access-io/access/pkg/generated/clientset/versioned"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions/access/v1alpha1"
 	accesslisters "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
 )
@@ -35,7 +35,7 @@ const (
 // Controller define the option of controller
 type Controller struct {
 	ctx    context.Context
-	client versioned.Interface
+	client accessversioned.Interface
 
 	lister     accesslisters.AccessLister
 	nodeLister corelisters.NodeLister
@@ -54,7 +54,7 @@ type Controller struct {
 // NewController return a controller and add event handler
 func NewController(
 	ctx context.Context,
-	client versioned.Interface,
+	client accessversioned.Interface,
 	informer accessinformers.AccessInformer,
 	nodeInformer coreinformers.NodeInformer,
 	recorder record.EventRecorder,
