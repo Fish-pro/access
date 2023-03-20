@@ -54,6 +54,13 @@ spec:
           status:
             description: AccessStatus defines the observed state of Access
             properties:
+              nodeStatuses:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                description: NodeStatus define the node blacklist ips
+                type: object
               observedGeneration:
                 description: ObservedGeneration is the most recent generation observed.
                   It corresponds to the Object's generation, which is updated on mutation

@@ -1,13 +1,13 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/cli/globalflag"
@@ -23,8 +23,8 @@ import (
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions"
 )
 
-func NewControllerCommand() *cobra.Command {
-	s := options.NewControllerOptions()
+func NewAgentCommand() *cobra.Command {
+	o := options.NewAgentOptions()
 
 	cmd := &cobra.Command{
 		Use: "access-agent",
@@ -32,13 +32,13 @@ func NewControllerCommand() *cobra.Command {
 			verflag.PrintAndExitIfRequested()
 			cliflag.PrintFlags(cmd.Flags())
 
-			c, err := s.Config()
+			c, err := o.Config()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
 
-			if err := Run(c.Complete()); err != nil {
+			if err := Run(c.Complete(), wait.NeverStop); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -46,7 +46,7 @@ func NewControllerCommand() *cobra.Command {
 	}
 
 	fs := cmd.Flags()
-	namedFlagSets := s.Flags()
+	namedFlagSets := o.Flags()
 	verflag.AddFlags(namedFlagSets.FlagSet("global"))
 	globalflag.AddGlobalFlags(namedFlagSets.FlagSet("global"), cmd.Name())
 	for _, f := range namedFlagSets.FlagSets {
@@ -60,17 +60,16 @@ func NewControllerCommand() *cobra.Command {
 }
 
 // Run runs the ControllerOptions.  This should never exit.
-func Run(c *config.CompletedConfig) error {
+func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v", version.Get())
 
-	stopCh := c.Ctx.Done()
-	defer c.Cancel()
+	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
 	// attach ebpf program
 	engine, err := blips.NewEbpfEngine()
 	if err != nil {
-		klog.Errorf("failed to run controller: %w", err)
+		klog.Errorf("failed to attach ebpf program: %w", err)
 		return err
 	}
 	defer engine.Close()
@@ -82,7 +81,6 @@ func Run(c *config.CompletedConfig) error {
 
 	// new controller
 	controller, err := accessctr.NewController(
-		c.Ctx,
 		c.AClient,
 		accessInformerFactory.Sample().V1alpha1().Accesses(),
 		kubeInformerFactory.Core().V1().Nodes(),
@@ -93,15 +91,14 @@ func Run(c *config.CompletedConfig) error {
 		return err
 	}
 
-	go controller.Run(1, stopCh)
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	go controller.Run(ctx)
 
 	kubeInformerFactory.Start(stopCh)
 	accessInformerFactory.Start(stopCh)
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	klog.Info("ctrl + c shutdown process ...")
-
+	<-stopCh
 	return nil
 }

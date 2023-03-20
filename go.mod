@@ -5,9 +5,9 @@ go 1.20
 require (
 	github.com/cilium/ebpf v0.10.0
 	github.com/spf13/cobra v1.6.1
-	k8s.io/api v0.26.2
-	k8s.io/apimachinery v0.26.2
-	k8s.io/client-go v0.26.2
+	k8s.io/api v0.26.3
+	k8s.io/apimachinery v0.26.3
+	k8s.io/client-go v0.26.3
 	k8s.io/code-generator v0.26.2
 	k8s.io/component-base v0.26.2
 	k8s.io/controller-manager v0.26.2
