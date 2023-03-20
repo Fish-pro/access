@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	command := app.NewControllerCommand()
+	command := app.NewAgentCommand()
 	code := cli.Run(command)
 	os.Exit(code)
 }

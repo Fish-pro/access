@@ -19,19 +19,19 @@ const (
 	ControllerUserAgent = "access-agent"
 )
 
-// ControllerOptions is the main context object for the resources-counter-controller controllers.
-type ControllerOptions struct {
+// AgentOptions is the main context object for the agent controllers.
+type AgentOptions struct {
 	Master     string
 	Kubeconfig string
 }
 
-// NewControllerOptions return all options of controller
-func NewControllerOptions() *ControllerOptions {
-	return &ControllerOptions{}
+// NewAgentOptions return all options of controller
+func NewAgentOptions() *AgentOptions {
+	return &AgentOptions{}
 }
 
 // Config return a controller config objective
-func (s *ControllerOptions) Config() (*config.Config, error) {
+func (s *AgentOptions) Config() (*config.Config, error) {
 	kubeconfig, err := clientcmd.BuildConfigFromFlags(s.Master, s.Kubeconfig)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (s *ControllerOptions) Config() (*config.Config, error) {
 }
 
 // Flags returns flags for a specific APIServer by section name
-func (s *ControllerOptions) Flags() cliflag.NamedFlagSets {
+func (s *AgentOptions) Flags() cliflag.NamedFlagSets {
 	fss := cliflag.NamedFlagSets{}
 
 	fs := fss.FlagSet("misc")

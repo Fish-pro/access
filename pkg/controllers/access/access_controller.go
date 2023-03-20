@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/cilium/ebpf"
+	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,31 +32,39 @@ import (
 )
 
 const (
+	// maxRetries is the number of times a deployment will be retried before it is dropped out of the queue.
+	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
+	// a deployment is going to be requeued:
+	//
+	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
+	maxRetries          = 15
 	controllerAgentName = "access-agent"
 )
 
 // Controller define the option of controller
 type Controller struct {
-	ctx    context.Context
 	client accessversioned.Interface
 
+	engine   *blips.EbpfEngine
+	nodeName types.NodeName
+
+	// lister define the cache object
 	lister     accesslisters.AccessLister
 	nodeLister corelisters.NodeLister
 
-	queue        workqueue.RateLimitingInterface
+	// synced define the sync for relist
 	accessSynced cache.InformerSynced
 	nodeSynced   cache.InformerSynced
 
-	engine *blips.EbpfEngine
+	// Access that need to be synced
+	queue workqueue.RateLimitingInterface
 
-	// recorder is an event recorder for recording Event resources to the
-	// Kubernetes API.
+	// recorder can record the event
 	recorder record.EventRecorder
 }
 
 // NewController return a controller and add event handler
 func NewController(
-	ctx context.Context,
 	client accessversioned.Interface,
 	informer accessinformers.AccessInformer,
 	nodeInformer coreinformers.NodeInformer,
@@ -61,8 +72,12 @@ func NewController(
 	engine *blips.EbpfEngine) (*Controller, error) {
 	klog.V(4).Info("Creating event broadcaster")
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
 	controller := &Controller{
-		ctx:          ctx,
 		client:       client,
 		lister:       informer.Lister(),
 		nodeLister:   nodeInformer.Lister(),
@@ -70,11 +85,12 @@ func NewController(
 		engine:       engine,
 		accessSynced: informer.Informer().HasSynced,
 		nodeSynced:   nodeInformer.Informer().HasSynced,
+		nodeName:     types.NodeName(strings.ToLower(hostname)),
 		queue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
 	}
 
 	klog.Info("Setting up event handlers")
-	_, err := informer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
+	_, err = informer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			controller.enqueue(obj)
 		},
@@ -93,7 +109,7 @@ func NewController(
 }
 
 // Run worker and sync the queue obj to self logic
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(ctx context.Context) error {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 
@@ -102,97 +118,143 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.accessSynced, c.nodeSynced); !ok {
+	if ok := cache.WaitForCacheSync(ctx.Done(), c.accessSynced, c.nodeSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
 	klog.Info("Starting workers")
 	// Launch two workers to process ServiceAccount resources
-	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, stopCh)
-	}
+	go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 
 	klog.Info("Started workers")
-	<-stopCh
+	<-ctx.Done()
 	klog.Info("Shutting down workers")
 
 	return nil
 }
 
-// runWorker wait obj by workerqueue
-func (c *Controller) runWorker() {
-	for c.processNextWorkItem() {
+// runWorker wait obj by queue
+func (c *Controller) runWorker(ctx context.Context) {
+	for c.processNextWorkItem(ctx) {
 	}
 }
 
 // if resource change, run this func to count resources
-func (c *Controller) processNextWorkItem() bool {
-	obj, shutdown := c.queue.Get()
-
-	if shutdown {
+func (c *Controller) processNextWorkItem(ctx context.Context) bool {
+	key, quit := c.queue.Get()
+	if quit {
 		return false
 	}
+	defer c.queue.Done(key)
 
-	err := func(obj interface{}) error {
-		defer c.queue.Done(obj)
-
-		key, ok := obj.(string)
-		if !ok {
-			c.queue.Forget(obj)
-			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-			return nil
-		}
-		if err := c.syncHandler(key); err != nil {
-			c.queue.AddRateLimited(key)
-			return fmt.Errorf("error syncing '%s': %s, requeuing", key, err.Error())
-		}
-		c.queue.Forget(obj)
-		klog.Infof("Successfully synced '%s'", key)
-		return nil
-	}(obj)
-
-	if err != nil {
-		utilruntime.HandleError(err)
-		return true
-	}
+	err := c.syncHandler(ctx, key.(string))
+	c.handleErr(err, key)
 
 	return true
 }
 
-// syncHandler
-func (c *Controller) syncHandler(key string) error {
+func (c *Controller) handleErr(err error, key interface{}) {
+	if err == nil || apierrors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
+		c.queue.Forget(key)
+		return
+	}
+
+	ns, name, keyErr := cache.SplitMetaNamespaceKey(key.(string))
+	if keyErr != nil {
+		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
+	}
+
+	if c.queue.NumRequeues(key) < maxRetries {
+		klog.V(2).InfoS("Error syncing deployment", "access", klog.KRef(ns, name), "err", err)
+		c.queue.AddRateLimited(key)
+		return
+	}
+
+	utilruntime.HandleError(err)
+	klog.V(2).InfoS("Dropping access out of the queue", "access", klog.KRef(ns, name), "err", err)
+	c.queue.Forget(key)
+}
+
+// syncHandler sync the access object
+func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
+		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
 
+	startTime := time.Now()
+	klog.V(4).InfoS("Started syncing access", "access", klog.KRef("", name), "startTime", startTime)
+	defer func() {
+		klog.V(4).InfoS("Finished syncing access", "deployment", klog.KRef("", name), "duration", time.Since(startTime))
+	}()
+
 	access, err := c.lister.Get(name)
+	if apierrors.IsNotFound(err) {
+		klog.V(2).InfoS("Access has been deleted", "access", klog.KRef("", name))
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 
-	if !access.DeletionTimestamp.IsZero() {
-		for _, ip := range access.Spec.IPs {
+	a := access.DeepCopy()
+
+	if !a.DeletionTimestamp.IsZero() {
+		for _, ip := range a.Spec.IPs {
 			var value string
 			if err := c.engine.BpfObjs.Blacklist.LookupAndDelete(ip, &value); err != nil {
+				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
 				return err
 			}
 		}
-		if err := c.removeFinalizer(access); err != nil {
+		if err := c.removeFinalizer(ctx, a); err != nil {
+			klog.Errorf("Failed to remove finalizer: %w", err)
 			return err
 		}
 	} else {
-		if err := c.setFinalizer(access); err != nil {
+		if err := c.setFinalizer(ctx, a); err != nil {
+			klog.Errorf("Failed to set finalizer: %w", err)
 			return err
 		}
 	}
 
-	if len(access.Spec.IPs) == 0 {
+	if len(a.Spec.IPs) == 0 {
 		return nil
 	}
 
-	for _, ip := range access.Spec.IPs {
+	// write rule to ebpf map
+	for _, ip := range a.Spec.IPs {
 		if err := c.engine.BpfObjs.Blacklist.Update(ip, "", ebpf.UpdateAny); err != nil {
+			klog.Errorf("Failed to update ebpf map ip %s: %w", ip, err)
+			return err
+		}
+	}
+
+	// list ips in node
+	ips, err := mapKeyList(c.engine.BpfObjs.Blacklist)
+	if err != nil {
+		klog.Errorf("Failed to list ebpf map: %w", err)
+		return err
+	}
+
+	newStatus := accessv1alpha1.AccessStatus{
+		NodeStatus: map[string][]string{
+			string(c.nodeName): ips,
+		},
+	}
+	for k, v := range a.Status.NodeStatus {
+		newStatus.NodeStatus[k] = v
+	}
+
+	return c.updateAccessStatusInNeed(ctx, access, newStatus)
+}
+
+func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
+	if !reflect.DeepEqual(access.Status, status) {
+		access.Status = status
+		_, err := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
+		if err != nil {
 			return err
 		}
 	}
@@ -200,13 +262,13 @@ func (c *Controller) syncHandler(key string) error {
 }
 
 // setFinalizer set finalizer from the given access
-func (c *Controller) setFinalizer(access *accessv1alpha1.Access) error {
+func (c *Controller) setFinalizer(ctx context.Context, access *accessv1alpha1.Access) error {
 	if sets.NewString(access.Finalizers...).Has(controllerAgentName) {
 		return nil
 	}
 
 	access.Finalizers = append(access.Finalizers, controllerAgentName)
-	_, err := c.client.SampleV1alpha1().Accesses().Update(c.ctx, access, metav1.UpdateOptions{})
+	_, err := c.client.SampleV1alpha1().Accesses().Update(ctx, access, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
@@ -214,13 +276,13 @@ func (c *Controller) setFinalizer(access *accessv1alpha1.Access) error {
 }
 
 // removeFinalizer remove finalizer from the given access
-func (c *Controller) removeFinalizer(access *accessv1alpha1.Access) error {
+func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1.Access) error {
 	if len(access.Finalizers) == 0 {
 		return nil
 	}
 
 	access.Finalizers = []string{}
-	_, err := c.client.SampleV1alpha1().Accesses().Update(c.ctx, access, metav1.UpdateOptions{})
+	_, err := c.client.SampleV1alpha1().Accesses().Update(ctx, access, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
@@ -230,12 +292,7 @@ func (c *Controller) removeFinalizer(access *accessv1alpha1.Access) error {
 // cannot find resource kind from obj,so we need case all gvr
 func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
-	nodeName, err := getNodeName()
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	node, err := c.nodeLister.Get(string(nodeName))
+	node, err := c.nodeLister.Get(string(c.nodeName))
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
@@ -255,10 +312,21 @@ func (c *Controller) enqueue(obj interface{}) {
 	c.queue.Add(key)
 }
 
-func getNodeName() (types.NodeName, error) {
-	hostname, err := os.Hostname()
+func mapKeyList(m *ebpf.Map) (keys []string, err error) {
+	var key, oldKey string
+	err = m.NextKey(nil, &oldKey)
 	if err != nil {
-		return "", err
+		return keys, err
 	}
-	return types.NodeName(strings.ToLower(hostname)), nil
+	keys = append(keys, oldKey)
+	for i := 0; i <= int(m.MaxEntries()); i++ {
+		err = m.NextKey(oldKey, &key)
+		if err != nil {
+			break
+		}
+		keys = append(keys, key)
+		oldKey = key
+	}
+
+	return keys, nil
 }
