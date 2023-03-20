@@ -6,7 +6,7 @@ metadata:
     {{- toYaml .Values.labels | nindent 4 }}
 rules:
 - apiGroups:
-  - "sample.access.io/v1alpha1"
+  - "sample.access.io"
   resources:
   - accesses
   verbs:
