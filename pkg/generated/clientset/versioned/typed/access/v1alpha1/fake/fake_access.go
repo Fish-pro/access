@@ -34,9 +34,9 @@ type FakeAccesses struct {
 	Fake *FakeSampleV1alpha1
 }
 
-var accessesResource = schema.GroupVersionResource{Group: "sample.application.io", Version: "v1alpha1", Resource: "accesses"}
+var accessesResource = schema.GroupVersionResource{Group: "sample.access.io", Version: "v1alpha1", Resource: "accesses"}
 
-var accessesKind = schema.GroupVersionKind{Group: "sample.application.io", Version: "v1alpha1", Kind: "Access"}
+var accessesKind = schema.GroupVersionKind{Group: "sample.access.io", Version: "v1alpha1", Kind: "Access"}
 
 // Get takes name of the access, and returns the corresponding access object, and an error if there is any.
 func (c *FakeAccesses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Access, err error) {

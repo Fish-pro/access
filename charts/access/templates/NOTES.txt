@@ -1,0 +1,5 @@
+Welcome to Access! For more details on Access, see: https://github.com/Fish-pro/access
+
+The Acccess [{{ .Chart.AppVersion }}] has been installed in namespace [{{ .Release.Namespace }}]. It will be ready soon.
+
+(Helm: Chart=[{{ .Chart.Name }}], Release=[{{ .Release.Name }}], Version=[{{ .Chart.Version }}])

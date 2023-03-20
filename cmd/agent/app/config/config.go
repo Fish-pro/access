@@ -7,7 +7,7 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 
-	"github.com/access-io/access/pkg/generated/clientset/versioned"
+	accessversioned "github.com/access-io/access/pkg/generated/clientset/versioned"
 )
 
 // Config define global options and sub controller configuration
@@ -15,7 +15,7 @@ type Config struct {
 	// the general kube client
 	Client *clientset.Clientset
 
-	AClient versioned.Interface
+	AClient accessversioned.Interface
 
 	// the rest config for the master
 	Kubeconfig *restclient.Config

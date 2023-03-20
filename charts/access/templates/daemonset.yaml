@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- toYaml .Values.labels | nindent 4 }}
+spec:
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- toYaml .Values.labels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml .Values.labels | nindent 8 }}
+    spec:
+      hostNetwork: true
+      containers:
+      - image: "{{ .Values.image.hub }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        name: {{ .Values.name }}
+        command:
+          - {{ .Values.name }}
+        resources:
+          requests:
+            cpu: {{ .Values.resources.container.request.cpu }}
+            memory: {{ .Values.resources.container.request.memory }}
+          limits:
+            cpu: {{ .Values.resources.container.limit.cpu }}
+            memory: {{ .Values.resources.container.limit.memory }}
+        securityContext:
+          privileged: true
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      serviceAccount: {{ .Values.name }}
+      serviceAccountName: {{ .Values.name }}
