@@ -2,9 +2,16 @@
 
 Access control is a node access controller running on kubernetes
 
+## Architecture
+
 ![access](images/access.png)
 
-## feature
+## Quick Start
+
+// todo
+
+## Feature
+
 + IP whitelist access control
 
 ## What's Next
