@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// pkg/application/v1alpha1/doc.go
 // +k8s:deepcopy-gen=package
-// +groupName=sample.application.io
+// +groupName=sample.access.io
 package v1alpha1

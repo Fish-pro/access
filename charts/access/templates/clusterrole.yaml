@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- toYaml .Values.labels | nindent 4 }}
+rules:
+- apiGroups:
+  - "sample.access.io/v1alpha1"
+  resources:
+  - accesses
+  verbs:
+  - list
+  - get
+  - watch

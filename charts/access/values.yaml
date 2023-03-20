@@ -1,0 +1,27 @@
+# Default values for merbridge.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# some settings of merbridge when start up
+name: access
+namespace: access-system
+revisionHistoryLimit: 10
+labels:
+  access.io/access-name: access
+nodeSelector:
+  kubernetes.io/arch: amd64
+
+image:
+  hub: ghcr.io
+  repository: access/access
+  tag: latest
+  pullPolicy: Always
+
+resources:
+  container:
+    limit:
+      cpu: 300m
+      memory: 200Mi
+    request:
+      cpu: 100m
+      memory: 200Mi

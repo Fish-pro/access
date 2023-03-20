@@ -30,7 +30,7 @@ type SampleV1alpha1Interface interface {
 	AccessesGetter
 }
 
-// SampleV1alpha1Client is used to interact with features provided by the sample.application.io group.
+// SampleV1alpha1Client is used to interact with features provided by the sample.access.io group.
 type SampleV1alpha1Client struct {
 	restClient rest.Interface
 }
