@@ -21,6 +21,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
@@ -253,10 +254,20 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
 	if !reflect.DeepEqual(access.Status, status) {
 		access.Status = status
-		_, err := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
-		if err != nil {
-			return err
-		}
+		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			_, updateErr := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
+			if updateErr == nil {
+				return nil
+			}
+			got, err := c.client.SampleV1alpha1().Accesses().Get(ctx, access.Name, metav1.GetOptions{})
+			if err == nil {
+				access := got.DeepCopy()
+				access.Status = status
+			} else {
+				klog.Errorf("Failed to create/update access %s: %w", access.Name, err)
+			}
+			return updateErr
+		})
 	}
 	return nil
 }
