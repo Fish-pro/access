@@ -223,7 +223,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	if !a.DeletionTimestamp.IsZero() {
 		for _, ip := range a.Spec.IPs {
 			var value string
-			if err := c.engine.BpfObjs.Blacklist.LookupAndDelete(ip, &value); err != nil {
+			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(ip, &value); err != nil {
 				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
 				return err
 			}
@@ -251,14 +251,14 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 			return err
 		}
 		val := uint32(1)
-		if err := c.engine.BpfObjs.Blacklist.Update(unsafe.Pointer(&long), &val, ebpf.UpdateAny); err != nil {
+		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &val, ebpf.UpdateAny); err != nil {
 			klog.Errorf("Failed to update ebpf map ip %s: %w", ip, err)
 			return err
 		}
 	}
 
 	// list ips in node
-	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.Blacklist)
+	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
 		klog.Errorf("Failed to list ebpf map: %w", err)
 		return err
