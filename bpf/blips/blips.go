@@ -48,7 +48,7 @@ func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
 
 	// Attach the program.
 	l, err := link.AttachXDP(link.XDPOptions{
-		Program:   objs.DropBlArp,
+		Program:   objs.XdpBlDrop,
 		Interface: iface.Index,
 	})
 	if err != nil {
