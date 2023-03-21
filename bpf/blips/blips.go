@@ -17,10 +17,10 @@ limitations under the License.
 package blips
 
 import (
-	"github.com/cilium/ebpf"
+	"net"
+
 	"github.com/cilium/ebpf/link"
 	"k8s.io/klog/v2"
-	"net"
 )
 
 // $BPF_CLANG and $BPF_CFLAGS are set by the Makefile.
@@ -55,7 +55,6 @@ func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
 		klog.Fatalf("could not attach XDP program: %s", err)
 		return nil, err
 	}
-	objs.Blacklist.Update("10.29.14.46", "", ebpf.UpdateAny)
 	return &EbpfEngine{BpfObjs: objs, Link: l}, nil
 }
 

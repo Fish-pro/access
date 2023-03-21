@@ -1,48 +1,58 @@
 //go:build ignore
 
-#include "common.h"
 #include "bpf_endian.h"
+#include "common.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct bpf_map_def SEC("maps") blacklist = {
-    .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(u32),
-    .value_size = sizeof(u8),
-    .max_entries = 100000,
-};
+/* Define an LRU hash map for storing packet count by source IPv4 address */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1000);
+	__type(key, __u32);   // source IPv4 address
+	__type(value, __u32); // packet count
+} xdp_stats_map SEC(".maps");
 
-struct arp_t {
-    unsigned short htype;
-    unsigned short ptype;
-    unsigned char hlen;
-    unsigned char plen;
-    unsigned short oper;
-    unsigned long long sha:48;
-    unsigned long long spa:32;
-    unsigned long long tha:48;
-    unsigned int tpa;
-} __attribute__((packed));
+/*
+Attempt to parse the IPv4 source address from the packet.
+Returns 0 if there is no IPv4 header field; otherwise returns non-zero.
+*/
+static __always_inline int parse_ip_src_addr(struct xdp_md *ctx, __u32 *ip_src_addr) {
+	void *data_end = (void *)(long)ctx->data_end;
+	void *data     = (void *)(long)ctx->data;
+
+	// First, parse the ethernet header.
+	struct ethhdr *eth = data;
+	if ((void *)(eth + 1) > data_end) {
+		return 0;
+	}
+
+	if (eth->h_proto != bpf_htons(ETH_P_IP)) {
+		// The protocol is not IPv4, so we can't parse an IPv4 source address.
+		return 0;
+	}
+
+	// Then parse the IP header.
+	struct iphdr *ip = (void *)(eth + 1);
+	if ((void *)(ip + 1) > data_end) {
+		return 0;
+	}
+
+	// Return the source IP address in network byte order.
+	*ip_src_addr = (__u32)(ip->saddr);
+	return 1;
+}
 
 SEC("xdp")
-int drop_bl_arp(struct xdp_md *ctx) {
-    void *data_end = (void *)(long)ctx->data_end;
-    void *data = (void *)(long)ctx->data;
-    u32 ip_src;
-    u64 *value;
-    struct ethhdr *eth = data;
+int xdp_bl_drop(struct xdp_md *ctx) {
+	__u32 ip;
+	if (!parse_ip_src_addr(ctx, &ip)) {
+		return XDP_PASS;
+	}
 
-    if (eth->h_proto != bpf_htons(0x0806)) {
-        return XDP_PASS;
+	__u32 *pkt_count = bpf_map_lookup_elem(&xdp_stats_map, &ip);
+	if (pkt_count) {
+	    return XDP_DROP;
     }
-
-    struct arp_t *arp = data + sizeof(*eth);
-
-    ip_src = arp->tpa;
-    value = bpf_map_lookup_elem(&blacklist, &ip_src);
-    if (value) {
-        return XDP_DROP;
-    }
-
-    return XDP_PASS;
+	return XDP_PASS;
 }
