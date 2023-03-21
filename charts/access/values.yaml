@@ -12,9 +12,9 @@ nodeSelector:
   kubernetes.io/arch: amd64
 
 image:
-  hub: ghcr.io
-  repository: access/access
-  tag: latest
+  hub: fishpro3
+  repository: access
+  tag: v1.0
   pullPolicy: Always
 
 resources:
