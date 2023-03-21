@@ -17,19 +17,29 @@ limitations under the License.
 package blips
 
 import (
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"k8s.io/klog/v2"
+	"net"
 )
 
 // $BPF_CLANG and $BPF_CFLAGS are set by the Makefile.
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf bl_ips.c -- -I../headers
+
+const DefaultIfaceName = "eth0"
 
 type EbpfEngine struct {
 	BpfObjs bpfObjects
 	Link    link.Link
 }
 
-func NewEbpfEngine() (*EbpfEngine, error) {
+func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
+	// Look up the network interface by name.
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		klog.Fatalf("lookup network iface %q: %s", ifaceName, err)
+	}
+
 	objs := bpfObjects{}
 	if err := loadBpfObjects(&objs, nil); err != nil {
 		klog.Fatalf("loading objects: %s", err)
@@ -38,13 +48,14 @@ func NewEbpfEngine() (*EbpfEngine, error) {
 
 	// Attach the program.
 	l, err := link.AttachXDP(link.XDPOptions{
-		Program: objs.DropBlArp,
+		Program:   objs.DropBlArp,
+		Interface: iface.Index,
 	})
 	if err != nil {
 		klog.Fatalf("could not attach XDP program: %s", err)
 		return nil, err
 	}
-
+	objs.Blacklist.Update("10.29.14.46", "", ebpf.UpdateAny)
 	return &EbpfEngine{BpfObjs: objs, Link: l}, nil
 }
 

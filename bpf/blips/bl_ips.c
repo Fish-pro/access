@@ -1,14 +1,15 @@
 //go:build ignore
 
 #include "common.h"
+#include "bpf_endian.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct bpf_elf_map SEC("maps") blacklist = {
+struct bpf_map_def SEC("maps") blacklist = {
     .type = BPF_MAP_TYPE_HASH,
-    .size_key = sizeof(u32),
-    .size_value = sizeof(u8),
-    .max_elem = 100000,
+    .key_size = sizeof(u32),
+    .value_size = sizeof(u8),
+    .max_entries = 100000,
 };
 
 struct arp_t {
@@ -23,7 +24,7 @@ struct arp_t {
     unsigned int tpa;
 } __attribute__((packed));
 
-SEC("drop_bl_arp")
+SEC("xdp")
 int drop_bl_arp(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
@@ -31,11 +32,11 @@ int drop_bl_arp(struct xdp_md *ctx) {
     u64 *value;
     struct ethhdr *eth = data;
 
-    if (eth->h_proto != htons(0x0806)){
+    if (eth->h_proto != bpf_htons(0x0806)) {
         return XDP_PASS;
     }
 
-    struct arp_t *arp = data +sizeof(*eth);
+    struct arp_t *arp = data + sizeof(*eth);
 
     ip_src = arp->tpa;
     value = bpf_map_lookup_elem(&blacklist, &ip_src);

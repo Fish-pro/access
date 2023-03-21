@@ -83,7 +83,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
 	// attach ebpf program
-	engine, err := blips.NewEbpfEngine()
+	engine, err := blips.NewEbpfEngine(blips.DefaultIfaceName)
 	if err != nil {
 		klog.Errorf("failed to attach ebpf program: %w", err)
 		return err
