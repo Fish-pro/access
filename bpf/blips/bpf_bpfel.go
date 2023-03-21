@@ -2,7 +2,7 @@
 //go:build 386 || amd64 || amd64p32 || arm || arm64 || mips64le || mips64p32le || mipsle || ppc64le || riscv64
 // +build 386 amd64 amd64p32 arm arm64 mips64le mips64p32le mipsle ppc64le riscv64
 
-package blips
+package main
 
 import (
 	"bytes"
@@ -54,14 +54,14 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	DropBlArp *ebpf.ProgramSpec `ebpf:"drop_bl_arp"`
+	XdpBlDrop *ebpf.ProgramSpec `ebpf:"xdp_bl_drop"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	Blacklist *ebpf.MapSpec `ebpf:"blacklist"`
+	XdpStatsMap *ebpf.MapSpec `ebpf:"xdp_stats_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -83,12 +83,12 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	Blacklist *ebpf.Map `ebpf:"blacklist"`
+	XdpStatsMap *ebpf.Map `ebpf:"xdp_stats_map"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
-		m.Blacklist,
+		m.XdpStatsMap,
 	)
 }
 
@@ -96,12 +96,12 @@ func (m *bpfMaps) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	DropBlArp *ebpf.Program `ebpf:"drop_bl_arp"`
+	XdpBlDrop *ebpf.Program `ebpf:"xdp_bl_drop"`
 }
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
-		p.DropBlArp,
+		p.XdpBlDrop,
 	)
 }
 

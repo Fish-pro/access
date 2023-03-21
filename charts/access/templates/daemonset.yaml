@@ -21,7 +21,7 @@ spec:
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         name: {{ .Values.name }}
         command:
-          - {{ .Values.name }}
+          - /manager
         resources:
           requests:
             cpu: {{ .Values.resources.container.request.cpu }}
@@ -31,9 +31,17 @@ spec:
             memory: {{ .Values.resources.container.limit.memory }}
         securityContext:
           privileged: true
+        volumeMounts:
+          - mountPath: /host/var/run
+            name: host-var-run
+            mountPropagation: Bidirectional
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       priorityClassName: system-node-critical
       restartPolicy: Always
       serviceAccount: {{ .Values.name }}
       serviceAccountName: {{ .Values.name }}
+      volumes:
+        - hostPath:
+            path: /var/run
+          name: host-var-run
