@@ -18,12 +18,12 @@ package access
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/cilium/ebpf"
 	v1 "k8s.io/api/core/v1"
@@ -47,6 +47,8 @@ import (
 	accessversioned "github.com/access-io/access/pkg/generated/clientset/versioned"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions/access/v1alpha1"
 	accesslisters "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
+	"github.com/access-io/access/pkg/util/ebpfmap"
+	"github.com/access-io/access/pkg/util/linux"
 )
 
 const (
@@ -221,7 +223,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	if !a.DeletionTimestamp.IsZero() {
 		for _, ip := range a.Spec.IPs {
 			var value string
-			if err := c.engine.BpfObjs.Blacklist.LookupAndDelete(ip, &value); err != nil {
+			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(ip, &value); err != nil {
 				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
 				return err
 			}
@@ -243,14 +245,20 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	// write rule to ebpf map
 	for _, ip := range a.Spec.IPs {
-		if err := c.engine.BpfObjs.Blacklist.Update(ip, "", ebpf.UpdateAny); err != nil {
+		long, err := linux.IPString2Long(ip)
+		if err != nil {
+			klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
+			return err
+		}
+		val := uint32(1)
+		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &val, ebpf.UpdateAny); err != nil {
 			klog.Errorf("Failed to update ebpf map ip %s: %w", ip, err)
 			return err
 		}
 	}
 
 	// list ips in node
-	ips, err := mapKeyList(c.engine.BpfObjs.Blacklist)
+	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
 		klog.Errorf("Failed to list ebpf map: %w", err)
 		return err
@@ -316,28 +324,6 @@ func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1
 		return err
 	}
 	return nil
-}
-
-// mapKeyList return ebpf map keys
-func mapKeyList(m *ebpf.Map) (keys []string, err error) {
-	var key, oldKey string
-	err = m.NextKey(nil, &oldKey)
-	if err != nil {
-		return keys, err
-	}
-	keys = append(keys, oldKey)
-	for i := 0; i <= int(m.MaxEntries()); i++ {
-		err = m.NextKey(oldKey, &key)
-		if errors.Is(err, ebpf.ErrKeyNotExist) {
-			break
-		} else if err != nil {
-			return keys, err
-		}
-		keys = append(keys, key)
-		oldKey = key
-	}
-
-	return keys, nil
 }
 
 // cannot find resource kind from obj,so we need case all gvr
