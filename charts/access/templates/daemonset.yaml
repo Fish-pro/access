@@ -32,6 +32,8 @@ spec:
         securityContext:
           privileged: true
         volumeMounts:
+          - mountPath: /host/proc
+            name: host-proc
           - mountPath: /host/var/run
             name: host-var-run
             mountPropagation: Bidirectional
@@ -45,3 +47,6 @@ spec:
         - hostPath:
             path: /var/run
           name: host-var-run
+        - hostPath:
+            path: /proc
+          name: host-proc
