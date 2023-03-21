@@ -15,7 +15,7 @@ image:
   hub: fishpro3
   repository: access
   tag: v1.0
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 resources:
   container:
