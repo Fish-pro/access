@@ -35,8 +35,8 @@ type SampleV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *SampleV1alpha1Client) Accesses() AccessInterface {
-	return newAccesses(c)
+func (c *SampleV1alpha1Client) Accesses(namespace string) AccessInterface {
+	return newAccesses(c, namespace)
 }
 
 // NewForConfig creates a new SampleV1alpha1Client for the given config.

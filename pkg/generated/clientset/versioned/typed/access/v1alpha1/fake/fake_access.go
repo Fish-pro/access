@@ -32,6 +32,7 @@ import (
 // FakeAccesses implements AccessInterface
 type FakeAccesses struct {
 	Fake *FakeSampleV1alpha1
+	ns   string
 }
 
 var accessesResource = schema.GroupVersionResource{Group: "sample.access.io", Version: "v1alpha1", Resource: "accesses"}
@@ -41,7 +42,8 @@ var accessesKind = schema.GroupVersionKind{Group: "sample.access.io", Version: "
 // Get takes name of the access, and returns the corresponding access object, and an error if there is any.
 func (c *FakeAccesses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Access, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(accessesResource, name), &v1alpha1.Access{})
+		Invokes(testing.NewGetAction(accessesResource, c.ns, name), &v1alpha1.Access{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -51,7 +53,8 @@ func (c *FakeAccesses) Get(ctx context.Context, name string, options v1.GetOptio
 // List takes label and field selectors, and returns the list of Accesses that match those selectors.
 func (c *FakeAccesses) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.AccessList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(accessesResource, accessesKind, opts), &v1alpha1.AccessList{})
+		Invokes(testing.NewListAction(accessesResource, accessesKind, c.ns, opts), &v1alpha1.AccessList{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -72,13 +75,15 @@ func (c *FakeAccesses) List(ctx context.Context, opts v1.ListOptions) (result *v
 // Watch returns a watch.Interface that watches the requested accesses.
 func (c *FakeAccesses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(accessesResource, opts))
+		InvokesWatch(testing.NewWatchAction(accessesResource, c.ns, opts))
+
 }
 
 // Create takes the representation of a access and creates it.  Returns the server's representation of the access, and an error, if there is any.
 func (c *FakeAccesses) Create(ctx context.Context, access *v1alpha1.Access, opts v1.CreateOptions) (result *v1alpha1.Access, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(accessesResource, access), &v1alpha1.Access{})
+		Invokes(testing.NewCreateAction(accessesResource, c.ns, access), &v1alpha1.Access{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -88,7 +93,8 @@ func (c *FakeAccesses) Create(ctx context.Context, access *v1alpha1.Access, opts
 // Update takes the representation of a access and updates it. Returns the server's representation of the access, and an error, if there is any.
 func (c *FakeAccesses) Update(ctx context.Context, access *v1alpha1.Access, opts v1.UpdateOptions) (result *v1alpha1.Access, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(accessesResource, access), &v1alpha1.Access{})
+		Invokes(testing.NewUpdateAction(accessesResource, c.ns, access), &v1alpha1.Access{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -99,7 +105,8 @@ func (c *FakeAccesses) Update(ctx context.Context, access *v1alpha1.Access, opts
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 func (c *FakeAccesses) UpdateStatus(ctx context.Context, access *v1alpha1.Access, opts v1.UpdateOptions) (*v1alpha1.Access, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(accessesResource, "status", access), &v1alpha1.Access{})
+		Invokes(testing.NewUpdateSubresourceAction(accessesResource, "status", c.ns, access), &v1alpha1.Access{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -109,13 +116,14 @@ func (c *FakeAccesses) UpdateStatus(ctx context.Context, access *v1alpha1.Access
 // Delete takes name of the access and deletes it. Returns an error if one occurs.
 func (c *FakeAccesses) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(accessesResource, name, opts), &v1alpha1.Access{})
+		Invokes(testing.NewDeleteActionWithOptions(accessesResource, c.ns, name, opts), &v1alpha1.Access{})
+
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeAccesses) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(accessesResource, listOpts)
+	action := testing.NewDeleteCollectionAction(accessesResource, c.ns, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.AccessList{})
 	return err
@@ -124,7 +132,8 @@ func (c *FakeAccesses) DeleteCollection(ctx context.Context, opts v1.DeleteOptio
 // Patch applies the patch and returns the patched access.
 func (c *FakeAccesses) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.Access, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(accessesResource, name, pt, data, subresources...), &v1alpha1.Access{})
+		Invokes(testing.NewPatchSubresourceAction(accessesResource, c.ns, name, pt, data, subresources...), &v1alpha1.Access{})
+
 	if obj == nil {
 		return nil, err
 	}

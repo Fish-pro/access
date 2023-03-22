@@ -40,5 +40,5 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 
 // Accesses returns a AccessInformer.
 func (v *version) Accesses() AccessInformer {
-	return &accessInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+	return &accessInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

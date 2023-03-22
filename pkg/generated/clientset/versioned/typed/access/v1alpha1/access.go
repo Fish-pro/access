@@ -32,7 +32,7 @@ import (
 // AccessesGetter has a method to return a AccessInterface.
 // A group's client should implement this interface.
 type AccessesGetter interface {
-	Accesses() AccessInterface
+	Accesses(namespace string) AccessInterface
 }
 
 // AccessInterface has methods to work with Access resources.
@@ -52,12 +52,14 @@ type AccessInterface interface {
 // accesses implements AccessInterface
 type accesses struct {
 	client rest.Interface
+	ns     string
 }
 
 // newAccesses returns a Accesses
-func newAccesses(c *SampleV1alpha1Client) *accesses {
+func newAccesses(c *SampleV1alpha1Client, namespace string) *accesses {
 	return &accesses{
 		client: c.RESTClient(),
+		ns:     namespace,
 	}
 }
 
@@ -65,6 +67,7 @@ func newAccesses(c *SampleV1alpha1Client) *accesses {
 func (c *accesses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Access, err error) {
 	result = &v1alpha1.Access{}
 	err = c.client.Get().
+		Namespace(c.ns).
 		Resource("accesses").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -81,6 +84,7 @@ func (c *accesses) List(ctx context.Context, opts v1.ListOptions) (result *v1alp
 	}
 	result = &v1alpha1.AccessList{}
 	err = c.client.Get().
+		Namespace(c.ns).
 		Resource("accesses").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -97,6 +101,7 @@ func (c *accesses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interf
 	}
 	opts.Watch = true
 	return c.client.Get().
+		Namespace(c.ns).
 		Resource("accesses").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -107,6 +112,7 @@ func (c *accesses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interf
 func (c *accesses) Create(ctx context.Context, access *v1alpha1.Access, opts v1.CreateOptions) (result *v1alpha1.Access, err error) {
 	result = &v1alpha1.Access{}
 	err = c.client.Post().
+		Namespace(c.ns).
 		Resource("accesses").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(access).
@@ -119,6 +125,7 @@ func (c *accesses) Create(ctx context.Context, access *v1alpha1.Access, opts v1.
 func (c *accesses) Update(ctx context.Context, access *v1alpha1.Access, opts v1.UpdateOptions) (result *v1alpha1.Access, err error) {
 	result = &v1alpha1.Access{}
 	err = c.client.Put().
+		Namespace(c.ns).
 		Resource("accesses").
 		Name(access.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
@@ -133,6 +140,7 @@ func (c *accesses) Update(ctx context.Context, access *v1alpha1.Access, opts v1.
 func (c *accesses) UpdateStatus(ctx context.Context, access *v1alpha1.Access, opts v1.UpdateOptions) (result *v1alpha1.Access, err error) {
 	result = &v1alpha1.Access{}
 	err = c.client.Put().
+		Namespace(c.ns).
 		Resource("accesses").
 		Name(access.Name).
 		SubResource("status").
@@ -146,6 +154,7 @@ func (c *accesses) UpdateStatus(ctx context.Context, access *v1alpha1.Access, op
 // Delete takes name of the access and deletes it. Returns an error if one occurs.
 func (c *accesses) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
+		Namespace(c.ns).
 		Resource("accesses").
 		Name(name).
 		Body(&opts).
@@ -160,6 +169,7 @@ func (c *accesses) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, 
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
+		Namespace(c.ns).
 		Resource("accesses").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -172,6 +182,7 @@ func (c *accesses) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, 
 func (c *accesses) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.Access, err error) {
 	result = &v1alpha1.Access{}
 	err = c.client.Patch(pt).
+		Namespace(c.ns).
 		Resource("accesses").
 		Name(name).
 		SubResource(subresources...).

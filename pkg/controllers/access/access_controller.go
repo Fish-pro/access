@@ -19,6 +19,7 @@ package access
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/util/retry"
 	"os"
 	"strings"
 	"time"
@@ -198,19 +199,19 @@ func (c *Controller) handleErr(err error, key interface{}) {
 
 // syncHandler sync the access object
 func (c *Controller) syncHandler(ctx context.Context, key string) error {
-	_, name, err := cache.SplitMetaNamespaceKey(key)
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
-	klog.Infof("Start sync access %s", name)
+	klog.Infof("Start sync access %s", klog.KRef(ns, name))
 
-	access, err := c.lister.Get(name)
+	access, err := c.lister.Accesses(ns).Get(name)
 	if apierrors.IsNotFound(err) {
-		klog.InfoS("Access not found", "access", klog.KRef("", name))
+		klog.InfoS("Access not found", "access", klog.KRef(ns, name))
 		return nil
 	} else if err != nil {
-		klog.Errorf("Failed to get access %s: %w", name, err)
+		klog.Errorf("Failed to get access %s: %w", klog.KRef(ns, name), err)
 		return err
 	}
 
@@ -222,33 +223,33 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	if access.Spec.NodeSelector != nil {
 		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			klog.Infof("Access nodeSelector %v not match nodeName %s", access.Spec.NodeSelector, c.nodeName)
+			klog.Infof("Access %s nodeSelector %v not match nodeName %s", klog.KRef(ns, name), access.Spec.NodeSelector, c.nodeName)
 			return nil
 		}
 	}
 
 	startTime := time.Now()
-	klog.V(4).InfoS("Started syncing access", "access", klog.KRef("", name), "startTime", startTime)
+	klog.V(4).InfoS("Started syncing access", "access", klog.KRef(ns, name), "startTime", startTime)
 	defer func() {
-		klog.V(4).InfoS("Finished syncing access", "deployment", klog.KRef("", name), "duration", time.Since(startTime))
+		klog.V(4).InfoS("Finished syncing access", "access", klog.KRef(ns, name), "duration", time.Since(startTime))
 	}()
 
 	if !access.DeletionTimestamp.IsZero() {
 		for _, ip := range access.Spec.IPs {
 			long, err := linux.IPString2Long(ip)
 			if err != nil {
-				klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
+				klog.Errorf("Failed to convert ip addr %s for access %s: %w", ip, klog.KRef(ns, name), err)
 				return err
 			}
 			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &defaultValue); err != nil {
-				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
+				klog.Errorf("Failed to delete blacklist ip %s for access %s: %w", ip, klog.KRef(ns, name), err)
 				return err
 			}
 		}
 	}
 
 	if len(access.Spec.IPs) == 0 {
-		klog.Errorf("Access spec IPs is nil")
+		klog.Errorf("Access %s spec IPs is nil", klog.KRef(ns, name))
 		return nil
 	}
 
@@ -268,7 +269,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// list ips in node
 	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
-		klog.Errorf("Failed to list ebpf map: %w", err)
+		klog.Errorf("Failed to list ebpf map for access %s: %w", klog.KRef(ns, name), err)
 		return err
 	}
 
@@ -281,7 +282,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		newStatus.NodeStatus[k] = v
 	}
 
-	klog.Infof("Get access status: %v", newStatus)
+	klog.Infof("Get access %s status: %v", klog.KRef(ns, name), newStatus)
 
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
@@ -290,11 +291,20 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
 	if !equality.Semantic.DeepEqual(access.Status, status) {
 		access.Status = status
-		_, err := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
-		if err != nil {
-			klog.Errorf("Failed to update access %s status: %w", access.Name, err)
-			return err
-		}
+		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			_, updateErr := c.client.SampleV1alpha1().Accesses(access.Namespace).UpdateStatus(ctx, access, metav1.UpdateOptions{})
+			if updateErr == nil {
+				return nil
+			}
+			got, err := c.client.SampleV1alpha1().Accesses(access.Namespace).Get(ctx, access.Name, metav1.GetOptions{})
+			if err == nil {
+				access = got.DeepCopy()
+				access.Status = status
+			} else if err != nil {
+				klog.Errorf("Failed to get access %s: %w", klog.KRef(access.Namespace, access.Name), err)
+			}
+			return updateErr
+		})
 	}
 	return nil
 }
@@ -302,10 +312,8 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 // cannot find resource kind from obj,so we need case all gvr
 func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
-	klog.Infof("Queue get access: %s", klog.KObj(access))
-
 	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
-		klog.V(4).Infof("Access nodeName %s not match nodeName %s", access.Spec.NodeName, c.nodeName)
+		klog.V(4).Infof("Access %s/%s nodeName %s not match nodeName %s", klog.KRef(access.Namespace, access.Name), access.Spec.NodeName, c.nodeName)
 		return
 	}
 

@@ -13,7 +13,7 @@ spec:
     listKind: AccessList
     plural: accesses
     singular: access
-  scope: Cluster
+  scope: Namespaced
   versions:
   - name: v1alpha1
     schema:

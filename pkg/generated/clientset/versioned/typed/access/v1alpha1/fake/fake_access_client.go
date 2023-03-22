@@ -27,8 +27,8 @@ type FakeSampleV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeSampleV1alpha1) Accesses() v1alpha1.AccessInterface {
-	return &FakeAccesses{c}
+func (c *FakeSampleV1alpha1) Accesses(namespace string) v1alpha1.AccessInterface {
+	return &FakeAccesses{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
