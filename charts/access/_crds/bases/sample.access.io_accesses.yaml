@@ -9,8 +9,6 @@ metadata:
 spec:
   group: sample.access.io
   names:
-    categories:
-    - access-io
     kind: Access
     listKind: AccessList
     plural: accesses

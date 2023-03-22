@@ -1,5 +1,5 @@
-apiVersion: "sample.access.io/v1alpha1"
-kind: "Access"
+apiVersion: sample.access.io/v1alpha1
+kind: Access
 metadata:
   name: demo
 spec:

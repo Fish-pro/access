@@ -285,7 +285,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	klog.Infof("Get access status: %v", newStatus)
 
-	return c.updateAccessStatusInNeed(ctx, access, newStatus)
+	return c.updateAccessStatusInNeed(ctx, a, newStatus)
 }
 
 // updateAccessStatusInNeed update status if you need
@@ -299,7 +299,7 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 			}
 			got, err := c.client.SampleV1alpha1().Accesses().Get(ctx, access.Name, metav1.GetOptions{})
 			if err == nil {
-				access := got.DeepCopy()
+				access = got.DeepCopy()
 				access.Status = status
 			} else {
 				klog.Errorf("Failed to create/update access %s: %w", access.Name, err)
