@@ -37,7 +37,6 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
@@ -214,7 +213,6 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		klog.Errorf("Failed to get access %s: %w", name, err)
 		return err
 	}
-	a := access.DeepCopy()
 
 	node, err := c.nodeLister.Get(string(c.nodeName))
 	if err != nil {
@@ -222,9 +220,9 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	if a.Spec.NodeSelector != nil {
-		if !labels.SelectorFromSet(a.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			klog.Infof("Access nodeSelector %v not match nodeName %s", a.Spec.NodeSelector, c.nodeName)
+	if access.Spec.NodeSelector != nil {
+		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
+			klog.Infof("Access nodeSelector %v not match nodeName %s", access.Spec.NodeSelector, c.nodeName)
 			return nil
 		}
 	}
@@ -235,8 +233,8 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		klog.V(4).InfoS("Finished syncing access", "deployment", klog.KRef("", name), "duration", time.Since(startTime))
 	}()
 
-	if !a.DeletionTimestamp.IsZero() {
-		for _, ip := range a.Spec.IPs {
+	if !access.DeletionTimestamp.IsZero() {
+		for _, ip := range access.Spec.IPs {
 			long, err := linux.IPString2Long(ip)
 			if err != nil {
 				klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
@@ -249,13 +247,13 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		}
 	}
 
-	if len(a.Spec.IPs) == 0 {
+	if len(access.Spec.IPs) == 0 {
 		klog.Errorf("Access spec IPs is nil")
 		return nil
 	}
 
 	// write rule to ebpf map
-	for _, ip := range a.Spec.IPs {
+	for _, ip := range access.Spec.IPs {
 		long, err := linux.IPString2Long(ip)
 		if err != nil {
 			klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
@@ -279,33 +277,24 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 			string(c.nodeName): ips,
 		},
 	}
-	for k, v := range a.Status.NodeStatus {
+	for k, v := range access.Status.NodeStatus {
 		newStatus.NodeStatus[k] = v
 	}
 
 	klog.Infof("Get access status: %v", newStatus)
 
-	return c.updateAccessStatusInNeed(ctx, a, newStatus)
+	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
 
 // updateAccessStatusInNeed update status if you need
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
 	if !equality.Semantic.DeepEqual(access.Status, status) {
 		access.Status = status
-		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			_, updateErr := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
-			if updateErr == nil {
-				return nil
-			}
-			got, err := c.client.SampleV1alpha1().Accesses().Get(ctx, access.Name, metav1.GetOptions{})
-			if err == nil {
-				access = got.DeepCopy()
-				access.Status = status
-			} else {
-				klog.Errorf("Failed to create/update access %s: %w", access.Name, err)
-			}
-			return updateErr
-		})
+		_, err := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
+		if err != nil {
+			klog.Errorf("Failed to update access %s status: %w", access.Name, err)
+			return err
+		}
 	}
 	return nil
 }
