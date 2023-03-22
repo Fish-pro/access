@@ -88,6 +88,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		klog.Errorf("failed to attach ebpf program: %w", err)
 		return err
 	}
+	klog.Info("Load ebpf program and map successfully.")
 	defer engine.Close()
 
 	// new normal informer factory

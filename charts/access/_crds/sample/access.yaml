@@ -1,0 +1,8 @@
+apiVersion: sample.access.io/v1alpha1
+kind: Access
+metadata:
+  name: demo
+spec:
+  nodeName: "ik8s-worker"
+  ips:
+    - "10.70.5.79"

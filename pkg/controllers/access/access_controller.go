@@ -20,19 +20,18 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 	"unsafe"
 
 	"github.com/cilium/ebpf"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -60,6 +59,8 @@ const (
 	maxRetries          = 15
 	controllerAgentName = "access-agent"
 )
+
+var defaultValue = uint32(1)
 
 // Controller define the option of controller
 type Controller struct {
@@ -122,6 +123,7 @@ func NewController(
 		},
 	}, time.Second*30)
 	if err != nil {
+		klog.Errorf("Failed to setting up event handlers")
 		return nil, err
 	}
 
@@ -138,7 +140,7 @@ func (c *Controller) Run(ctx context.Context) error {
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(ctx.Done(), c.accessSynced, c.nodeSynced); !ok {
+	if !cache.WaitForCacheSync(ctx.Done(), c.accessSynced, c.nodeSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -202,56 +204,63 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
-
-	startTime := time.Now()
-	klog.V(4).InfoS("Started syncing access", "access", klog.KRef("", name), "startTime", startTime)
-	defer func() {
-		klog.V(4).InfoS("Finished syncing access", "deployment", klog.KRef("", name), "duration", time.Since(startTime))
-	}()
+	klog.Infof("Start sync access %s", name)
 
 	access, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
-		klog.V(2).InfoS("Access has been deleted", "access", klog.KRef("", name))
+		klog.InfoS("Access not found", "access", name)
 		return nil
-	}
-	if err != nil {
+	} else if err != nil {
+		klog.Errorf("Failed to get access %s: %w", name, err)
 		return err
 	}
 
-	a := access.DeepCopy()
+	node, err := c.nodeLister.Get(string(c.nodeName))
+	if err != nil {
+		klog.Errorf("Failed to get node by nodeLister: %w", err)
+		return err
+	}
 
-	if !a.DeletionTimestamp.IsZero() {
-		for _, ip := range a.Spec.IPs {
-			var value string
-			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(ip, &value); err != nil {
-				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
-				return err
-			}
-		}
-		if err := c.removeFinalizer(ctx, a); err != nil {
-			klog.Errorf("Failed to remove finalizer: %w", err)
-			return err
-		}
-	} else {
-		if err := c.setFinalizer(ctx, a); err != nil {
-			klog.Errorf("Failed to set finalizer: %w", err)
-			return err
+	if access.Spec.NodeSelector != nil {
+		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
+			klog.Infof("Access %s nodeSelector %v not match nodeName %s", name, access.Spec.NodeSelector, c.nodeName)
+			return nil
 		}
 	}
 
-	if len(a.Spec.IPs) == 0 {
+	startTime := time.Now()
+	klog.V(4).InfoS("Started syncing access", "access", name, "startTime", startTime)
+	defer func() {
+		klog.V(4).InfoS("Finished syncing access", "access", name, "duration", time.Since(startTime))
+	}()
+
+	if !access.DeletionTimestamp.IsZero() {
+		for _, ip := range access.Spec.IPs {
+			long, err := linux.IPString2Long(ip)
+			if err != nil {
+				klog.Errorf("Failed to convert ip addr %s for access %s: %w", ip, name, err)
+				return err
+			}
+			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &defaultValue); err != nil {
+				klog.Errorf("Failed to delete blacklist ip %s for access %s: %w", ip, name, err)
+				return err
+			}
+		}
+	}
+
+	if len(access.Spec.IPs) == 0 {
+		klog.Errorf("Access %s spec IPs is nil", name)
 		return nil
 	}
 
 	// write rule to ebpf map
-	for _, ip := range a.Spec.IPs {
+	for _, ip := range access.Spec.IPs {
 		long, err := linux.IPString2Long(ip)
 		if err != nil {
 			klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
 			return err
 		}
-		val := uint32(1)
-		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &val, ebpf.UpdateAny); err != nil {
+		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &defaultValue, ebpf.UpdateAny); err != nil {
 			klog.Errorf("Failed to update ebpf map ip %s: %w", ip, err)
 			return err
 		}
@@ -260,7 +269,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// list ips in node
 	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
-		klog.Errorf("Failed to list ebpf map: %w", err)
+		klog.Errorf("Failed to list ebpf map for access %s: %w", name, err)
 		return err
 	}
 
@@ -269,16 +278,18 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 			string(c.nodeName): ips,
 		},
 	}
-	for k, v := range a.Status.NodeStatus {
+	for k, v := range access.Status.NodeStatus {
 		newStatus.NodeStatus[k] = v
 	}
+
+	klog.Infof("Get access %s status: %v", name, newStatus)
 
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
 
 // updateAccessStatusInNeed update status if you need
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
-	if !reflect.DeepEqual(access.Status, status) {
+	if !equality.Semantic.DeepEqual(access.Status, status) {
 		access.Status = status
 		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			_, updateErr := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
@@ -287,41 +298,13 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 			}
 			got, err := c.client.SampleV1alpha1().Accesses().Get(ctx, access.Name, metav1.GetOptions{})
 			if err == nil {
-				access := got.DeepCopy()
+				access = got.DeepCopy()
 				access.Status = status
 			} else {
-				klog.Errorf("Failed to create/update access %s: %w", access.Name, err)
+				klog.Errorf("Failed to get access %s: %w", access.Name, err)
 			}
-			return updateErr
+			return fmt.Errorf("failed to update access %s status: %w", access.Name, updateErr)
 		})
-	}
-	return nil
-}
-
-// setFinalizer set finalizer from the given access
-func (c *Controller) setFinalizer(ctx context.Context, access *accessv1alpha1.Access) error {
-	if sets.NewString(access.Finalizers...).Has(controllerAgentName) {
-		return nil
-	}
-
-	access.Finalizers = append(access.Finalizers, controllerAgentName)
-	_, err := c.client.SampleV1alpha1().Accesses().Update(ctx, access, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// removeFinalizer remove finalizer from the given access
-func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1.Access) error {
-	if len(access.Finalizers) == 0 {
-		return nil
-	}
-
-	access.Finalizers = []string{}
-	_, err := c.client.SampleV1alpha1().Accesses().Update(ctx, access, metav1.UpdateOptions{})
-	if err != nil {
-		return err
 	}
 	return nil
 }
@@ -329,20 +312,13 @@ func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1
 // cannot find resource kind from obj,so we need case all gvr
 func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
-	node, err := c.nodeLister.Get(string(c.nodeName))
-	if err != nil {
-		utilruntime.HandleError(err)
+	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
+		klog.V(4).Infof("Access %s nodeName %s not match nodeName %s", klog.KRef(metav1.NamespaceAll, access.Name), c.nodeName)
 		return
 	}
 
-	if len(access.Spec.NodeSelector) != 0 {
-		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			return
-		}
-	}
-
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}

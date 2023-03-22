@@ -17,7 +17,9 @@ limitations under the License.
 package blips
 
 import (
+	"fmt"
 	"net"
+	"os"
 
 	"github.com/cilium/ebpf/link"
 	"k8s.io/klog/v2"
@@ -34,6 +36,12 @@ type EbpfEngine struct {
 }
 
 func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
+	klog.Info("Start load ebpf program and map")
+
+	if os.Getuid() != 0 {
+		return nil, fmt.Errorf("root user in required for this process or container")
+	}
+
 	// Look up the network interface by name.
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
