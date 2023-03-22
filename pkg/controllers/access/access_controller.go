@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -235,20 +234,16 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	if !a.DeletionTimestamp.IsZero() {
 		for _, ip := range a.Spec.IPs {
-			var value string
-			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(ip, &value); err != nil {
+			long, err := linux.IPString2Long(ip)
+			if err != nil {
+				klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
+				return err
+			}
+			val := uint32(1)
+			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &val); err != nil {
 				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
 				return err
 			}
-		}
-		if err := c.removeFinalizer(ctx, a); err != nil {
-			klog.Errorf("Failed to remove finalizer: %w", err)
-			return err
-		}
-	} else {
-		if err := c.setFinalizer(ctx, a); err != nil {
-			klog.Errorf("Failed to set finalizer: %w", err)
-			return err
 		}
 	}
 
@@ -309,34 +304,6 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 			}
 			return updateErr
 		})
-	}
-	return nil
-}
-
-// setFinalizer set finalizer from the given access
-func (c *Controller) setFinalizer(ctx context.Context, access *accessv1alpha1.Access) error {
-	if sets.NewString(access.Finalizers...).Has(controllerAgentName) {
-		return nil
-	}
-
-	access.Finalizers = append(access.Finalizers, controllerAgentName)
-	_, err := c.client.SampleV1alpha1().Accesses().Update(ctx, access, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// removeFinalizer remove finalizer from the given access
-func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1.Access) error {
-	if len(access.Finalizers) == 0 {
-		return nil
-	}
-
-	access.Finalizers = []string{}
-	_, err := c.client.SampleV1alpha1().Accesses().Update(ctx, access, metav1.UpdateOptions{})
-	if err != nil {
-		return err
 	}
 	return nil
 }
