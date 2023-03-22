@@ -313,7 +313,7 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
 	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
-		klog.V(4).Infof("Access %s nodeName %s not match nodeName %s", klog.KRef(metav1.NamespaceAll, access.Name), c.nodeName)
+		klog.V(4).Infof("Access %s nodeName %s not match nodeName %s", access.Name, c.nodeName)
 		return
 	}
 
