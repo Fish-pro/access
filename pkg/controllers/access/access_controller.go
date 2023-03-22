@@ -206,7 +206,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	access, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
-		klog.InfoS("Access has been deleted", "access", klog.KRef("", name))
+		klog.InfoS("Access not found", "access", klog.KRef("", name))
 		return nil
 	} else if err != nil {
 		klog.Errorf("Failed to get access %s: %w", name, err)
