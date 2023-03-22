@@ -138,7 +138,7 @@ func (c *Controller) Run(ctx context.Context) error {
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(ctx.Done(), c.accessSynced, c.nodeSynced); !ok {
+	if !cache.WaitForCacheSync(ctx.Done(), c.accessSynced, c.nodeSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -206,9 +206,10 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	access, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
-		klog.V(2).InfoS("Access has been deleted", "access", klog.KRef("", name))
+		klog.InfoS("Access has been deleted", "access", klog.KRef("", name))
 		return nil
 	} else if err != nil {
+		klog.Errorf("Failed to get access %s: %w", name, err)
 		return err
 	}
 	a := access.DeepCopy()
@@ -221,7 +222,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	if a.Spec.NodeSelector != nil {
 		if !labels.SelectorFromSet(a.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			klog.V(4).Infof("Access nodeSelector %v not match nodeName %s", a.Spec.NodeSelector, c.nodeName)
+			klog.Infof("Access nodeSelector %v not match nodeName %s", a.Spec.NodeSelector, c.nodeName)
 			return nil
 		}
 	}
@@ -248,6 +249,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 
 	if len(a.Spec.IPs) == 0 {
+		klog.Errorf("Access spec IPs is nil")
 		return nil
 	}
 

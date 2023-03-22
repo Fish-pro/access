@@ -22,6 +22,7 @@ import (
 
 // +genclient
 // +genclient:nonNamespaced
+// +kubebuilder:resource:scope="Cluster",categories={access-io}
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // Access is the Schema for the access api

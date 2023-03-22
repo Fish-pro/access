@@ -9,11 +9,13 @@ metadata:
 spec:
   group: sample.access.io
   names:
+    categories:
+    - access-io
     kind: Access
     listKind: AccessList
     plural: accesses
     singular: access
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:

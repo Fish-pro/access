@@ -1,0 +1,102 @@
+---
+# Source: access/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: access
+  namespace: access-system
+  labels:
+    access.io/access-name: access
+---
+# Source: access/templates/clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: access
+  labels:
+    access.io/access-name: access
+rules:
+- apiGroups:
+  - "sample.access.io"
+  resources:
+  - accesses
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+    - list
+    - get
+    - watch
+---
+# Source: access/templates/clusterrolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: access
+  labels:
+    access.io/access-name: access
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: access
+subjects:
+- kind: ServiceAccount
+  name: access
+  namespace: access-system
+---
+# Source: access/templates/daemonset.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: access
+  namespace: access-system
+  labels:
+    access.io/access-name: access
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      access.io/access-name: access
+  template:
+    metadata:
+      labels:
+        access.io/access-name: access
+    spec:
+      hostNetwork: true
+      containers:
+      - image: "fishpro3/access:v1.0"
+        imagePullPolicy: IfNotPresent
+        name: access
+        command:
+          - /manager
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 300m
+            memory: 200Mi
+        securityContext:
+          privileged: true
+        volumeMounts:
+          - mountPath: /host/proc
+            name: host-proc
+          - mountPath: /host/var/run
+            name: host-var-run
+            mountPropagation: Bidirectional
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      serviceAccount: access
+      serviceAccountName: access
+      volumes:
+        - hostPath:
+            path: /var/run
+          name: host-var-run
+        - hostPath:
+            path: /proc
+          name: host-proc
