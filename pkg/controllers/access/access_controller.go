@@ -20,13 +20,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 	"unsafe"
 
 	"github.com/cilium/ebpf"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -290,7 +290,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 // updateAccessStatusInNeed update status if you need
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
-	if !reflect.DeepEqual(access.Status, status) {
+	if !equality.Semantic.DeepEqual(access.Status, status) {
 		access.Status = status
 		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			_, updateErr := c.client.SampleV1alpha1().Accesses().UpdateStatus(ctx, access, metav1.UpdateOptions{})
