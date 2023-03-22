@@ -60,6 +60,8 @@ const (
 	controllerAgentName = "access-agent"
 )
 
+var defaultValue = uint32(1)
+
 // Controller define the option of controller
 type Controller struct {
 	client accessversioned.Interface
@@ -240,8 +242,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 				klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
 				return err
 			}
-			val := uint32(1)
-			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &val); err != nil {
+			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &defaultValue); err != nil {
 				klog.Errorf("Failed to delete blacklist ip %s: %w", ip, err)
 				return err
 			}
@@ -260,8 +261,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 			klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
 			return err
 		}
-		val := uint32(1)
-		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &val, ebpf.UpdateAny); err != nil {
+		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &defaultValue, ebpf.UpdateAny); err != nil {
 			klog.Errorf("Failed to update ebpf map ip %s: %w", ip, err)
 			return err
 		}
