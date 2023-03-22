@@ -205,22 +205,33 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 	klog.Infof("Start sync access %s", name)
 
+	access, err := c.lister.Get(name)
+	if apierrors.IsNotFound(err) {
+		klog.V(2).InfoS("Access has been deleted", "access", klog.KRef("", name))
+		return nil
+	} else if err != nil {
+		return err
+	}
+	a := access.DeepCopy()
+
+	node, err := c.nodeLister.Get(string(c.nodeName))
+	if err != nil {
+		klog.Errorf("Failed to get node by nodeLister: %w", err)
+		return err
+	}
+
+	if len(a.Spec.NodeSelector) != 0 {
+		if !labels.SelectorFromSet(a.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
+			klog.V(4).Infof("Access nodeSelector %v not match nodeName %s", a.Spec.NodeSelector, c.nodeName)
+			return nil
+		}
+	}
+
 	startTime := time.Now()
 	klog.V(4).InfoS("Started syncing access", "access", klog.KRef("", name), "startTime", startTime)
 	defer func() {
 		klog.V(4).InfoS("Finished syncing access", "deployment", klog.KRef("", name), "duration", time.Since(startTime))
 	}()
-
-	access, err := c.lister.Get(name)
-	if apierrors.IsNotFound(err) {
-		klog.V(2).InfoS("Access has been deleted", "access", klog.KRef("", name))
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	a := access.DeepCopy()
 
 	if !a.DeletionTimestamp.IsZero() {
 		for _, ip := range a.Spec.IPs {
@@ -335,27 +346,13 @@ func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
 	klog.Infof("Queue get access: %s", klog.KObj(access))
 
-	node, err := c.nodeLister.Get(string(c.nodeName))
-	if err != nil {
-		klog.Errorf("Failed to get node by nodeLister: %w", err)
-		utilruntime.HandleError(err)
-		return
-	}
-
 	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
 		klog.V(4).Infof("Access nodeName %s not match nodeName %s", access.Spec.NodeName, c.nodeName)
 		return
 	}
 
-	if len(access.Spec.NodeSelector) != 0 {
-		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			klog.V(4).Infof("Access nodeSelector %v not match nodeName %s", access.Spec.NodeSelector, c.nodeName)
-			return
-		}
-	}
-
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}
