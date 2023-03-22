@@ -36,6 +36,8 @@ type EbpfEngine struct {
 }
 
 func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
+	klog.Info("Start load ebpf program and map")
+
 	if os.Getuid() != 0 {
 		return nil, fmt.Errorf("root user in required for this process or container")
 	}
