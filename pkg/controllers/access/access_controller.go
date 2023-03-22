@@ -219,7 +219,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	if len(a.Spec.NodeSelector) != 0 {
+	if a.Spec.NodeSelector != nil {
 		if !labels.SelectorFromSet(a.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
 			klog.V(4).Infof("Access nodeSelector %v not match nodeName %s", a.Spec.NodeSelector, c.nodeName)
 			return nil
