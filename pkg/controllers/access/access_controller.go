@@ -122,6 +122,7 @@ func NewController(
 		},
 	}, time.Second*30)
 	if err != nil {
+		klog.Errorf("Failed to setting up event handlers")
 		return nil, err
 	}
 
@@ -202,6 +203,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
+	klog.Infof("Start sync access %s", name)
 
 	startTime := time.Now()
 	klog.V(4).InfoS("Started syncing access", "access", klog.KRef("", name), "startTime", startTime)
@@ -273,6 +275,8 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		newStatus.NodeStatus[k] = v
 	}
 
+	klog.Infof("Get access status: %v", newStatus)
+
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
 
@@ -329,14 +333,23 @@ func (c *Controller) removeFinalizer(ctx context.Context, access *accessv1alpha1
 // cannot find resource kind from obj,so we need case all gvr
 func (c *Controller) enqueue(obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
+	klog.Infof("Queue get access: %s", klog.KObj(access))
+
 	node, err := c.nodeLister.Get(string(c.nodeName))
 	if err != nil {
+		klog.Errorf("Failed to get node by nodeLister: %w", err)
 		utilruntime.HandleError(err)
+		return
+	}
+
+	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
+		klog.V(4).Infof("Access nodeName %s not match nodeName %s", access.Spec.NodeName, c.nodeName)
 		return
 	}
 
 	if len(access.Spec.NodeSelector) != 0 {
 		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
+			klog.V(4).Infof("Access nodeSelector %v not match nodeName %s", access.Spec.NodeSelector, c.nodeName)
 			return
 		}
 	}
