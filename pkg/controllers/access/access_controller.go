@@ -300,7 +300,7 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 			if err == nil {
 				access = got.DeepCopy()
 				access.Status = status
-			} else if err != nil {
+			} else {
 				klog.Errorf("Failed to get access %s: %w", access.Name, err)
 			}
 			return fmt.Errorf("failed to update access %s status: %w", access.Name, updateErr)
