@@ -204,14 +204,14 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
-	klog.Infof("Start sync access %s", klog.KRef(metav1.NamespaceAll, name))
+	klog.Infof("Start sync access %s", name)
 
 	access, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
-		klog.InfoS("Access not found", "access", klog.KRef(metav1.NamespaceAll, name))
+		klog.InfoS("Access not found", "access", name)
 		return nil
 	} else if err != nil {
-		klog.Errorf("Failed to get access %s: %w", klog.KRef(metav1.NamespaceAll, name), err)
+		klog.Errorf("Failed to get access %s: %w", name, err)
 		return err
 	}
 
@@ -223,33 +223,33 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	if access.Spec.NodeSelector != nil {
 		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			klog.Infof("Access %s nodeSelector %v not match nodeName %s", klog.KRef(metav1.NamespaceAll, name), access.Spec.NodeSelector, c.nodeName)
+			klog.Infof("Access %s nodeSelector %v not match nodeName %s", name, access.Spec.NodeSelector, c.nodeName)
 			return nil
 		}
 	}
 
 	startTime := time.Now()
-	klog.V(4).InfoS("Started syncing access", "access", klog.KRef(metav1.NamespaceAll, name), "startTime", startTime)
+	klog.V(4).InfoS("Started syncing access", "access", name, "startTime", startTime)
 	defer func() {
-		klog.V(4).InfoS("Finished syncing access", "access", klog.KRef(metav1.NamespaceAll, name), "duration", time.Since(startTime))
+		klog.V(4).InfoS("Finished syncing access", "access", name, "duration", time.Since(startTime))
 	}()
 
 	if !access.DeletionTimestamp.IsZero() {
 		for _, ip := range access.Spec.IPs {
 			long, err := linux.IPString2Long(ip)
 			if err != nil {
-				klog.Errorf("Failed to convert ip addr %s for access %s: %w", ip, klog.KRef(metav1.NamespaceAll, name), err)
+				klog.Errorf("Failed to convert ip addr %s for access %s: %w", ip, name, err)
 				return err
 			}
 			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &defaultValue); err != nil {
-				klog.Errorf("Failed to delete blacklist ip %s for access %s: %w", ip, klog.KRef(metav1.NamespaceAll, name), err)
+				klog.Errorf("Failed to delete blacklist ip %s for access %s: %w", ip, name, err)
 				return err
 			}
 		}
 	}
 
 	if len(access.Spec.IPs) == 0 {
-		klog.Errorf("Access %s spec IPs is nil", klog.KRef(metav1.NamespaceAll, name))
+		klog.Errorf("Access %s spec IPs is nil", name)
 		return nil
 	}
 
@@ -269,7 +269,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// list ips in node
 	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
-		klog.Errorf("Failed to list ebpf map for access %s: %w", klog.KRef(metav1.NamespaceAll, name), err)
+		klog.Errorf("Failed to list ebpf map for access %s: %w", name, err)
 		return err
 	}
 
@@ -282,7 +282,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		newStatus.NodeStatus[k] = v
 	}
 
-	klog.Infof("Get access %s status: %v", klog.KRef(metav1.NamespaceAll, name), newStatus)
+	klog.Infof("Get access %s status: %v", name, newStatus)
 
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
@@ -301,9 +301,9 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 				access = got.DeepCopy()
 				access.Status = status
 			} else if err != nil {
-				klog.Errorf("Failed to get access %s: %w", klog.KRef(metav1.NamespaceAll, access.Name), err)
+				klog.Errorf("Failed to get access %s: %w", access.Name, err)
 			}
-			return updateErr
+			return fmt.Errorf("failed to update access %s status: %w", access.Name, updateErr)
 		})
 	}
 	return nil
