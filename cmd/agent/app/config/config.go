@@ -36,6 +36,9 @@ type Config struct {
 
 	EventBroadcaster record.EventBroadcaster
 	EventRecorder    record.EventRecorder
+
+	// Device define the network device name
+	Device string
 }
 
 type completedConfig struct {

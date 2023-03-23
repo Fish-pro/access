@@ -22,13 +22,10 @@ import (
 	"os"
 
 	"github.com/cilium/ebpf/link"
-	"k8s.io/klog/v2"
 )
 
 // $BPF_CLANG and $BPF_CFLAGS are set by the Makefile.
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf bl_ips.c -- -I../headers
-
-const DefaultIfaceName = "eth0"
 
 type EbpfEngine struct {
 	BpfObjs bpfObjects
@@ -36,8 +33,6 @@ type EbpfEngine struct {
 }
 
 func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
-	klog.Info("Start load ebpf program and map")
-
 	if os.Getuid() != 0 {
 		return nil, fmt.Errorf("root user in required for this process or container")
 	}
@@ -45,13 +40,12 @@ func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
 	// Look up the network interface by name.
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
-		klog.Fatalf("lookup network iface %q: %s", ifaceName, err)
+		return nil, fmt.Errorf("failed to look up network interface: %w", err)
 	}
 
 	objs := bpfObjects{}
 	if err := loadBpfObjects(&objs, nil); err != nil {
-		klog.Fatalf("loading objects: %s", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to load objects: %s", err)
 	}
 
 	// Attach the program.
@@ -60,8 +54,7 @@ func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
 		Interface: iface.Index,
 	})
 	if err != nil {
-		klog.Fatalf("could not attach XDP program: %s", err)
-		return nil, err
+		return nil, fmt.Errorf("could not attach XDP program: %w", err)
 	}
 	return &EbpfEngine{BpfObjs: objs, Link: l}, nil
 }

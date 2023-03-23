@@ -43,6 +43,9 @@ type AgentOptions struct {
 
 	Master     string
 	Kubeconfig string
+
+	// Device define the network device name
+	Device string
 }
 
 // NewAgentOptions return all options of controller
@@ -76,6 +79,7 @@ func (s *AgentOptions) Config() (*config.Config, error) {
 		Kubeconfig:       kubeconfig,
 		EventBroadcaster: eventBroadcaster,
 		EventRecorder:    eventRecorder,
+		Device:           s.Device,
 	}
 
 	s.Metrics.Apply()
@@ -93,6 +97,7 @@ func (s *AgentOptions) Flags() cliflag.NamedFlagSets {
 	fs := fss.FlagSet("misc")
 	fs.StringVar(&s.Master, "master", s.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig).")
 	fs.StringVar(&s.Kubeconfig, "kubeconfig", s.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
+	fs.StringVar(&s.Device, "device", "eth0", "The Device define the network device name(default eth0).")
 
 	return fss
 }
