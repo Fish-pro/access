@@ -68,7 +68,36 @@ Image: "nginx:stable" with ID "sha256:8c9eabeac475449c72ad457ccbc014788a02dbbc64
 Create an nginx application and expose the service using `NodePort`
 
 ```bash
-➜  charts git:(master) ✗ kubectl create -f demo/nginx.yaml
+➜  charts git:(master) ✗ cat << EOF | kubectl create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app.kubernetes.io/name: proxy
+spec:
+  containers:
+    - name: nginx
+      image: nginx:stable
+      ports:
+        - containerPort: 80
+          name: http-web-svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: proxy
+  ports:
+    - name: http-web-svc
+      protocol: TCP
+      port: 80
+      nodePort: 30100
+      targetPort: 80
+EOF
 pod/nginx created
 service/nginx-service created
 ```
