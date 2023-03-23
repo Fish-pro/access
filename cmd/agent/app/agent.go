@@ -110,7 +110,7 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
 	defer c.EventBroadcaster.Shutdown()
 
 	// load and attach ebpf program
-	engine, err := blips.NewEbpfEngine(blips.DefaultIfaceName)
+	engine, err := blips.NewEbpfEngine(c.Device)
 	if err != nil {
 		logger.Error(err, "Failed to load and attach ebpf program")
 		return err
