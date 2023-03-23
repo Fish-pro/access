@@ -219,7 +219,12 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		logger.Error(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
-	logger.Info("Start sync access", "access", name)
+
+	startTime := time.Now()
+	logger.V(4).Info("Started syncing access", "access", name, "startTime", startTime)
+	defer func() {
+		logger.V(4).Info("Finished syncing access", "access", name, "duration", time.Since(startTime))
+	}()
 
 	access, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
@@ -238,16 +243,10 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	if access.Spec.NodeSelector != nil {
 		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			logger.Info("Access nodeSelector not match node", "access", name, "selector", access.Spec.NodeSelector)
+			logger.V(4).Info("Access nodeSelector not match node", "access", name, "selector", access.Spec.NodeSelector)
 			return nil
 		}
 	}
-
-	startTime := time.Now()
-	logger.V(4).Info("Started syncing access", "access", name, "startTime", startTime)
-	defer func() {
-		logger.V(4).Info("Finished syncing access", "access", name, "duration", time.Since(startTime))
-	}()
 
 	if !access.DeletionTimestamp.IsZero() {
 		for _, ip := range access.Spec.IPs {
