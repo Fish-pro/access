@@ -288,13 +288,12 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 
 	newStatus := accessv1alpha1.AccessStatus{
-		NodeStatus: map[string][]string{
-			string(c.nodeName): ips,
-		},
+		NodeStatus: make(map[string][]string),
 	}
 	for k, v := range access.Status.NodeStatus {
 		newStatus.NodeStatus[k] = v
 	}
+	newStatus.NodeStatus[string(c.nodeName)] = ips
 
 	logger.Info("Get access status", "access", name, "status", newStatus)
 
