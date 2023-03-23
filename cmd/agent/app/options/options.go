@@ -25,6 +25,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	cliflag "k8s.io/component-base/cli/flag"
+	"k8s.io/component-base/logs"
+	logsapi "k8s.io/component-base/logs/api/v1"
+	"k8s.io/component-base/metrics"
 	"k8s.io/klog/v2"
 
 	"github.com/access-io/access/cmd/agent/app/config"
@@ -37,13 +40,19 @@ const (
 
 // AgentOptions is the main context object for the agent controllers.
 type AgentOptions struct {
+	Metrics *metrics.Options
+	Logs    *logs.Options
+
 	Master     string
 	Kubeconfig string
 }
 
 // NewAgentOptions return all options of controller
 func NewAgentOptions() *AgentOptions {
-	return &AgentOptions{}
+	return &AgentOptions{
+		Metrics: metrics.NewOptions(),
+		Logs:    logs.NewOptions(),
+	}
 }
 
 // Config return a controller config objective
@@ -69,12 +78,17 @@ func (s *AgentOptions) Config() (*config.Config, error) {
 		EventRecorder: eventRecorder,
 	}
 
+	s.Metrics.Apply()
+
 	return c, nil
 }
 
 // Flags returns flags for a specific APIServer by section name
 func (s *AgentOptions) Flags() cliflag.NamedFlagSets {
 	fss := cliflag.NamedFlagSets{}
+
+	s.Metrics.AddFlags(fss.FlagSet("metrics"))
+	logsapi.AddFlags(s.Logs, fss.FlagSet("logs"))
 
 	fs := fss.FlagSet("misc")
 	fs.StringVar(&s.Master, "master", s.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig).")

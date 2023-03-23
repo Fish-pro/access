@@ -148,7 +148,7 @@ func (c *Controller) Run(ctx context.Context) error {
 	// Launch two workers to process ServiceAccount resources
 	go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 
-	klog.Info("Started workers")
+	klog.InfoS("Started workers", "node", c.nodeName)
 	<-ctx.Done()
 	klog.Info("Shutting down workers")
 

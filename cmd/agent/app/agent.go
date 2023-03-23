@@ -24,9 +24,11 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	kubeinformers "k8s.io/client-go/informers"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/cli/globalflag"
+	logsapi "k8s.io/component-base/logs/api/v1"
 	"k8s.io/component-base/term"
 	"k8s.io/component-base/version"
 	"k8s.io/component-base/version/verflag"
@@ -44,20 +46,30 @@ func NewAgentCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "access-agent",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			verflag.PrintAndExitIfRequested()
+			// Activate logging as soon as possible, after that
+			// show flags with the final logging configuration.
+			if err := logsapi.ValidateAndApply(o.Logs, utilfeature.DefaultFeatureGate); err != nil {
+				return err
+			}
 			cliflag.PrintFlags(cmd.Flags())
 
 			c, err := o.Config()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
+				return err
 			}
-
-			if err := Run(c.Complete(), wait.NeverStop); err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
+			// add feature enablement metrics
+			utilfeature.DefaultMutableFeatureGate.AddMetrics()
+			return Run(c.Complete(), wait.NeverStop)
+		},
+		Args: func(cmd *cobra.Command, args []string) error {
+			for _, arg := range args {
+				if len(arg) > 0 {
+					return fmt.Errorf("%q does not take any arguments, got %q", cmd.CommandPath(), args)
+				}
 			}
+			return nil
 		},
 	}
 
