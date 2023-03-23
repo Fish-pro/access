@@ -34,6 +34,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/kubernetes"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -44,6 +46,7 @@ import (
 	"github.com/access-io/access/bpf/blips"
 	accessv1alpha1 "github.com/access-io/access/pkg/apis/access/v1alpha1"
 	accessversioned "github.com/access-io/access/pkg/generated/clientset/versioned"
+	"github.com/access-io/access/pkg/generated/clientset/versioned/scheme"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions/access/v1alpha1"
 	accesslisters "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
 	"github.com/access-io/access/pkg/util/ebpfmap"
@@ -64,7 +67,8 @@ var defaultValue = uint32(1)
 
 // Controller define the option of controller
 type Controller struct {
-	client accessversioned.Interface
+	kubeClient kubernetes.Interface
+	client     accessversioned.Interface
 
 	engine   *blips.EbpfEngine
 	nodeName types.NodeName
@@ -80,50 +84,55 @@ type Controller struct {
 	// Access that need to be synced
 	queue workqueue.RateLimitingInterface
 
-	// recorder can record the event
-	recorder record.EventRecorder
+	eventBroadcaster record.EventBroadcaster
+	eventRecorder    record.EventRecorder
 }
 
 // NewController return a controller and add event handler
 func NewController(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
 	client accessversioned.Interface,
 	informer accessinformers.AccessInformer,
 	nodeInformer coreinformers.NodeInformer,
-	recorder record.EventRecorder,
 	engine *blips.EbpfEngine) (*Controller, error) {
-	klog.V(4).Info("Creating event broadcaster")
+	logger := klog.FromContext(ctx)
 
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, err
 	}
 
+	logger.V(4).Info("Creating event broadcaster")
+	eventBroadcaster := record.NewBroadcaster()
 	controller := &Controller{
-		client:       client,
-		lister:       informer.Lister(),
-		nodeLister:   nodeInformer.Lister(),
-		recorder:     recorder,
-		engine:       engine,
-		accessSynced: informer.Informer().HasSynced,
-		nodeSynced:   nodeInformer.Informer().HasSynced,
-		nodeName:     types.NodeName(strings.ToLower(hostname)),
-		queue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
+		client:           client,
+		kubeClient:       kubeClient,
+		engine:           engine,
+		lister:           informer.Lister(),
+		nodeLister:       nodeInformer.Lister(),
+		accessSynced:     informer.Informer().HasSynced,
+		nodeSynced:       nodeInformer.Informer().HasSynced,
+		nodeName:         types.NodeName(strings.ToLower(hostname)),
+		eventBroadcaster: eventBroadcaster,
+		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerAgentName}),
+		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
 	}
 
-	klog.Info("Setting up event handlers")
+	logger.Info("Setting up event handlers")
 	_, err = informer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			controller.enqueue(obj)
+			controller.enqueue(logger, obj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			controller.enqueue(newObj)
+			controller.enqueue(logger, newObj)
 		},
 		DeleteFunc: func(obj interface{}) {
-			controller.enqueue(obj)
+			controller.enqueue(logger, obj)
 		},
 	}, time.Second*30)
 	if err != nil {
-		klog.Errorf("Failed to setting up event handlers")
+		logger.Error(err, "Failed to setting up event handlers")
 		return nil, err
 	}
 
@@ -131,28 +140,32 @@ func NewController(
 }
 
 // Run worker and sync the queue obj to self logic
-func (c *Controller) Run(ctx context.Context) error {
+func (c *Controller) Run(ctx context.Context) {
 	defer utilruntime.HandleCrash()
+
+	// Start events processing pipeline.
+	c.eventBroadcaster.StartStructuredLogging(0)
+	c.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: c.kubeClient.CoreV1().Events(metav1.NamespaceAll)})
+	defer c.eventBroadcaster.Shutdown()
+
 	defer c.queue.ShutDown()
 
+	logger := klog.FromContext(ctx)
 	// Start the informer factories to begin populating the informer caches
-	klog.Info("Starting resources counter controller")
+	logger.Info("Starting controller", "controller", controllerAgentName)
+	defer logger.Info("Shutting down controller", "controller", controllerAgentName)
 
-	// Wait for the caches to be synced before starting workers
-	klog.Info("Waiting for informer caches to sync")
+	// Wait for the caches to be synced before starting worker
+	logger.Info("Waiting for informer caches to sync")
 	if !cache.WaitForCacheSync(ctx.Done(), c.accessSynced, c.nodeSynced) {
-		return fmt.Errorf("failed to wait for caches to sync")
+		logger.Error(fmt.Errorf("failed to sync informer"), "Informer caches to sync bad")
+		return
 	}
 
-	klog.Info("Starting workers")
-	// Launch two workers to process ServiceAccount resources
+	logger.Info("Starting worker")
 	go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 
-	klog.Info("Started workers")
 	<-ctx.Done()
-	klog.Info("Shutting down workers")
-
-	return nil
 }
 
 // runWorker wait obj by queue
@@ -170,86 +183,87 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	defer c.queue.Done(key)
 
 	err := c.syncHandler(ctx, key.(string))
-	c.handleErr(err, key)
+	c.handleErr(ctx, err, key)
 
 	return true
 }
 
-func (c *Controller) handleErr(err error, key interface{}) {
+func (c *Controller) handleErr(ctx context.Context, err error, key interface{}) {
+	logger := klog.FromContext(ctx)
 	if err == nil || apierrors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
 		c.queue.Forget(key)
 		return
 	}
-
 	ns, name, keyErr := cache.SplitMetaNamespaceKey(key.(string))
 	if keyErr != nil {
-		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
+		logger.Error(err, "Failed to split meta namespace cache key", "cacheKey", key)
 	}
 
 	if c.queue.NumRequeues(key) < maxRetries {
-		klog.V(2).InfoS("Error syncing deployment", "access", klog.KRef(ns, name), "err", err)
+		logger.V(2).Info("Error syncing access", "access", klog.KRef(ns, name), "err", err)
 		c.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	klog.V(2).InfoS("Dropping access out of the queue", "access", klog.KRef(ns, name), "err", err)
+	logger.V(2).Info("Dropping access out of the queue", "deployment", klog.KRef(ns, name), "err", err)
 	c.queue.Forget(key)
 }
 
 // syncHandler sync the access object
 func (c *Controller) syncHandler(ctx context.Context, key string) error {
+	logger := klog.FromContext(ctx)
+
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
+		logger.Error(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
-	klog.Infof("Start sync access %s", name)
+
+	startTime := time.Now()
+	logger.V(4).Info("Started syncing access", "access", name, "startTime", startTime)
+	defer func() {
+		logger.V(4).Info("Finished syncing access", "access", name, "duration", time.Since(startTime))
+	}()
 
 	access, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
-		klog.InfoS("Access not found", "access", name)
+		logger.Info("Access not found", "access", name)
 		return nil
 	} else if err != nil {
-		klog.Errorf("Failed to get access %s: %w", name, err)
+		logger.Error(err, "Failed to get access", "access", name)
 		return err
 	}
 
 	node, err := c.nodeLister.Get(string(c.nodeName))
 	if err != nil {
-		klog.Errorf("Failed to get node by nodeLister: %w", err)
+		logger.Error(err, "Failed to get node by node lister")
 		return err
 	}
 
 	if access.Spec.NodeSelector != nil {
 		if !labels.SelectorFromSet(access.Spec.NodeSelector).Matches(labels.Set(node.Labels)) {
-			klog.Infof("Access %s nodeSelector %v not match nodeName %s", name, access.Spec.NodeSelector, c.nodeName)
+			logger.V(4).Info("Access nodeSelector not match node", "access", name, "selector", access.Spec.NodeSelector)
 			return nil
 		}
 	}
-
-	startTime := time.Now()
-	klog.V(4).InfoS("Started syncing access", "access", name, "startTime", startTime)
-	defer func() {
-		klog.V(4).InfoS("Finished syncing access", "access", name, "duration", time.Since(startTime))
-	}()
 
 	if !access.DeletionTimestamp.IsZero() {
 		for _, ip := range access.Spec.IPs {
 			long, err := linux.IPString2Long(ip)
 			if err != nil {
-				klog.Errorf("Failed to convert ip addr %s for access %s: %w", ip, name, err)
+				logger.Error(err, "Failed to convert ip addr", "access", name, "ip", ip)
 				return err
 			}
 			if err := c.engine.BpfObjs.XdpStatsMap.LookupAndDelete(unsafe.Pointer(&long), &defaultValue); err != nil {
-				klog.Errorf("Failed to delete blacklist ip %s for access %s: %w", ip, name, err)
+				logger.Error(err, "Failed to delete blacklist ip", "access", name, "ip", ip)
 				return err
 			}
 		}
 	}
 
 	if len(access.Spec.IPs) == 0 {
-		klog.Errorf("Access %s spec IPs is nil", name)
+		logger.Error(err, "Access IPs is nil", "access", name)
 		return nil
 	}
 
@@ -257,11 +271,11 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	for _, ip := range access.Spec.IPs {
 		long, err := linux.IPString2Long(ip)
 		if err != nil {
-			klog.Errorf("Failed to convert ip addr %s: %w", ip, err)
+			logger.Error(err, "Failed to convert ip addr", "access", name, "ip", ip)
 			return err
 		}
 		if err := c.engine.BpfObjs.XdpStatsMap.Update(unsafe.Pointer(&long), &defaultValue, ebpf.UpdateAny); err != nil {
-			klog.Errorf("Failed to update ebpf map ip %s: %w", ip, err)
+			logger.Error(err, "Failed to update ebpf map", "access", name, "ip", ip)
 			return err
 		}
 	}
@@ -269,7 +283,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// list ips in node
 	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
-		klog.Errorf("Failed to list ebpf map for access %s: %w", name, err)
+		logger.Error(err, "Failed to list ebpf map", "access", name)
 		return err
 	}
 
@@ -282,13 +296,14 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		newStatus.NodeStatus[k] = v
 	}
 
-	klog.Infof("Get access %s status: %v", name, newStatus)
+	logger.Info("Get access status", "access", name, "status", newStatus)
 
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
 
 // updateAccessStatusInNeed update status if you need
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
+	logger := klog.FromContext(ctx)
 	if !equality.Semantic.DeepEqual(access.Status, status) {
 		access.Status = status
 		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -301,7 +316,7 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 				access = got.DeepCopy()
 				access.Status = status
 			} else {
-				klog.Errorf("Failed to get access %s: %w", access.Name, err)
+				logger.Error(err, "Failed to get access", "access", access.Name)
 			}
 			return fmt.Errorf("failed to update access %s status: %w", access.Name, updateErr)
 		})
@@ -310,17 +325,18 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 }
 
 // cannot find resource kind from obj,so we need case all gvr
-func (c *Controller) enqueue(obj interface{}) {
+func (c *Controller) enqueue(logger klog.Logger, obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
 	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
-		klog.V(4).Infof("Access %s nodeName %s not match nodeName %s", access.Name, c.nodeName)
+		logger.V(4).Info("Access not match nodeName", "access", access.Name, "node", c.nodeName)
 		return
 	}
 
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
-		utilruntime.HandleError(err)
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", access, err))
 		return
 	}
+
 	c.queue.Add(key)
 }

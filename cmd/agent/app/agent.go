@@ -23,10 +23,14 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/wait"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	kubeinformers "k8s.io/client-go/informers"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/cli/globalflag"
+	logsapi "k8s.io/component-base/logs/api/v1"
+	"k8s.io/component-base/metrics/features"
 	"k8s.io/component-base/term"
 	"k8s.io/component-base/version"
 	"k8s.io/component-base/version/verflag"
@@ -39,25 +43,40 @@ import (
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions"
 )
 
+func init() {
+	utilruntime.Must(logsapi.AddFeatureGates(utilfeature.DefaultMutableFeatureGate))
+	utilruntime.Must(features.AddFeatureGates(utilfeature.DefaultMutableFeatureGate))
+}
+
 func NewAgentCommand() *cobra.Command {
 	o := options.NewAgentOptions()
 
 	cmd := &cobra.Command{
 		Use: "access-agent",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			verflag.PrintAndExitIfRequested()
+			// Activate logging as soon as possible, after that
+			// show flags with the final logging configuration.
+			if err := logsapi.ValidateAndApply(o.Logs, utilfeature.DefaultFeatureGate); err != nil {
+				return err
+			}
 			cliflag.PrintFlags(cmd.Flags())
 
 			c, err := o.Config()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
+				return err
 			}
-
-			if err := Run(c.Complete(), wait.NeverStop); err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
+			// add feature enablement metrics
+			utilfeature.DefaultMutableFeatureGate.AddMetrics()
+			return Run(context.Background(), c.Complete())
+		},
+		Args: func(cmd *cobra.Command, args []string) error {
+			for _, arg := range args {
+				if len(arg) > 0 {
+					return fmt.Errorf("%q does not take any arguments, got %q", cmd.CommandPath(), args)
+				}
 			}
+			return nil
 		},
 	}
 
@@ -76,19 +95,27 @@ func NewAgentCommand() *cobra.Command {
 }
 
 // Run runs the ControllerOptions.  This should never exit.
-func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
-	// To help debugging, immediately log version
-	klog.Infof("Version: %+v", version.Get())
+func Run(ctx context.Context, c *config.CompletedConfig) error {
+	logger := klog.FromContext(ctx)
+	stopCh := ctx.Done()
 
-	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
+	// To help debugging, immediately log version
+	logger.Info("Starting", "version", version.Get())
+
+	logger.Info("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
+
+	// Start events processing pipeline.
+	c.EventBroadcaster.StartStructuredLogging(0)
+	c.EventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: c.Client.CoreV1().Events("")})
+	defer c.EventBroadcaster.Shutdown()
 
 	// attach ebpf program
 	engine, err := blips.NewEbpfEngine(blips.DefaultIfaceName)
 	if err != nil {
-		klog.Errorf("failed to attach ebpf program: %w", err)
+		logger.Error(err, "failed to attach ebpf program")
 		return err
 	}
-	klog.Info("Load ebpf program and map successfully.")
+	logger.Info("Load ebpf program and map successfully.")
 	defer engine.Close()
 
 	// new normal informer factory
@@ -98,18 +125,17 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	// new controller
 	controller, err := accessctr.NewController(
+		ctx,
+		c.Client,
 		c.AClient,
 		accessInformerFactory.Sample().V1alpha1().Accesses(),
 		kubeInformerFactory.Core().V1().Nodes(),
-		c.EventRecorder,
 		engine,
 	)
 	if err != nil {
+		logger.Error(err, "Failed to new agent controller")
 		return err
 	}
-
-	ctx, cancel := context.WithCancel(context.TODO())
-	defer cancel()
 
 	go controller.Run(ctx)
 
