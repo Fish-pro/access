@@ -226,7 +226,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		logger.V(4).Info("Finished syncing access", "access", name, "duration", time.Since(startTime))
 	}()
 
-	access, err := c.lister.Get(name)
+	a, err := c.lister.Get(name)
 	if apierrors.IsNotFound(err) {
 		logger.Info("Access not found", "access", name)
 		return nil
@@ -234,6 +234,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		logger.Error(err, "Failed to get access", "access", name)
 		return err
 	}
+	access := a.DeepCopy()
 
 	node, err := c.nodeLister.Get(string(c.nodeName))
 	if err != nil {
