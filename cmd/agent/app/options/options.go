@@ -17,10 +17,11 @@ limitations under the License.
 package options
 
 import (
+	"github.com/access-io/access/cmd/agent/app/config"
+	"github.com/access-io/access/pkg/builder"
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
@@ -28,10 +29,6 @@ import (
 	"k8s.io/component-base/logs"
 	logsapi "k8s.io/component-base/logs/api/v1"
 	"k8s.io/component-base/metrics"
-	"k8s.io/klog/v2"
-
-	"github.com/access-io/access/cmd/agent/app/config"
-	"github.com/access-io/access/pkg/builder"
 )
 
 const (
@@ -69,13 +66,15 @@ func (s *AgentOptions) Config() (*config.Config, error) {
 
 	clientBuilder := builder.NewSimpleAccessControllerClientBuilder(kubeconfig)
 
-	eventRecorder := createRecorder(client, ControllerUserAgent)
+	eventBroadcaster := record.NewBroadcaster()
+	eventRecorder := eventBroadcaster.NewRecorder(clientgokubescheme.Scheme, v1.EventSource{Component: ControllerUserAgent})
 
 	c := &config.Config{
-		Client:        client,
-		AClient:       clientBuilder.AccessClientOrDie(ControllerUserAgent),
-		Kubeconfig:    kubeconfig,
-		EventRecorder: eventRecorder,
+		Client:           client,
+		AClient:          clientBuilder.AccessClientOrDie(ControllerUserAgent),
+		Kubeconfig:       kubeconfig,
+		EventBroadcaster: eventBroadcaster,
+		EventRecorder:    eventRecorder,
 	}
 
 	s.Metrics.Apply()
@@ -95,12 +94,4 @@ func (s *AgentOptions) Flags() cliflag.NamedFlagSets {
 	fs.StringVar(&s.Kubeconfig, "kubeconfig", s.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
 
 	return fss
-}
-
-// createRecorder return a event recorder
-func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(klog.Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	return eventBroadcaster.NewRecorder(clientgokubescheme.Scheme, v1.EventSource{Component: userAgent})
 }
