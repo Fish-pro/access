@@ -199,9 +199,36 @@ Login to `ik8s-worker2` test whether the access rule is successfully applied
 ➜  charts git:(master) ✗ docker exec -it ik8s-worker2 /bin/bash
 root@ik8s-worker2:/# curl 172.19.0.2:30100
 curl: (28) Failed to connect to 172.19.0.2 port 30100: Connection timed out
+root@ik8s-worker2:/# exit
+exit
+➜  charts git:(master) ✗ docker exec -it ik8s-control-plane /bin/bash
+root@ik8s-control-plane:/# curl 172.19.0.2:30100
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+html { color-scheme: light dark; }
+body { width: 35em; margin: 0 auto;
+font-family: Tahoma, Verdana, Arial, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
 ```
 
-We can find that the access service times out, so the access control rule is successfully applied
+We can find that the access service times out, other nodes are still accessible, so the access control rule is successfully applied
 
 ## Ability
 
