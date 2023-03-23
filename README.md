@@ -228,7 +228,7 @@ Commercial support is available at
 </html>
 ```
 
-We can find that the access service times out, other nodes are still accessible, so the access control rule is successfully applied
+We can find that the access service timeout on `ik8s-worker2`, other nodes are still accessible, so the access control rule is successfully applied
 
 ## Ability
 
