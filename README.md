@@ -139,26 +139,6 @@ EOF
 access.sample.access.io/demo created
 ```
 
-```bash
-➜  charts git:(master) ✗ kubectl get access demo -o yaml
-apiVersion: sample.access.io/v1alpha1
-kind: Access
-metadata:
-  creationTimestamp: "2023-03-23T08:00:13Z"
-  generation: 1
-  name: demo
-  resourceVersion: "2400"
-  uid: a42822d5-13cd-48c4-8c02-3fb4c7e684a9
-spec:
-  ips:
-  - 172.19.0.3
-  nodeName: ik8s-worker
-status:
-  nodeStatuses:
-    ik8s-worker:
-    - 172.19.0.3
-```
-
 After the rule application is created, you can view the rule application status
 
 ```bash
