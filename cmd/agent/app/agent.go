@@ -94,7 +94,7 @@ func NewAgentCommand() *cobra.Command {
 	return cmd
 }
 
-// Run runs the ControllerOptions.  This should never exit.
+// Run runs the agent controller and attach ebpf program. This should never exit.
 func Run(ctx context.Context, c *config.CompletedConfig) error {
 	logger := klog.FromContext(ctx)
 	stopCh := ctx.Done()
@@ -109,13 +109,13 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
 	c.EventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: c.Client.CoreV1().Events("")})
 	defer c.EventBroadcaster.Shutdown()
 
-	// attach ebpf program
+	// load and attach ebpf program
 	engine, err := blips.NewEbpfEngine(blips.DefaultIfaceName)
 	if err != nil {
-		logger.Error(err, "failed to attach ebpf program")
+		logger.Error(err, "failed to load and attach ebpf program")
 		return err
 	}
-	logger.Info("Load ebpf program and map successfully.")
+	logger.Info("Load and attach ebpf program successfully.")
 	defer engine.Close()
 
 	// new normal informer factory
