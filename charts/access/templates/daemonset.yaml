@@ -22,6 +22,8 @@ spec:
         name: {{ .Values.name }}
         command:
           - /manager
+        args:
+          - --v=4
         resources:
           requests:
             cpu: {{ .Values.resources.container.request.cpu }}

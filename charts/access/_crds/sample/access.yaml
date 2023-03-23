@@ -5,4 +5,4 @@ metadata:
 spec:
   nodeName: "ik8s-worker"
   ips:
-    - "10.70.5.79"
+    - "172.19.0.2"

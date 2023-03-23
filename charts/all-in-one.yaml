@@ -49,6 +49,8 @@ spec:
         name: access
         command:
           - /manager
+        args:
+          - --v=4
         resources:
           requests:
             cpu: 100m
