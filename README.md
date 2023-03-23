@@ -10,7 +10,7 @@ Access control is a node access controller running on kubernetes, Access current
 
 The example is quickly demonstrated locally using [kind](https://github.com/kubernetes-sigs/kind), so install kind before testing
 
-### clone project
+### Clone project
 ```bash
 ➜  ~ git clone https://github.com/Fish-pro/access.git
 正克隆到 'access'...
@@ -24,7 +24,7 @@ remote: Total 7456 (delta 266), reused 851 (delta 256), pack-reused 6591
 ➜  ~ cd access/charts
 ```
 
-### create cluster
+### Create cluster
 
 ```bash
 ➜  charts git:(master) kind create cluster --name ik8s --config demo/kind.yaml
@@ -49,9 +49,9 @@ ik8s-worker          Ready    <none>                 10m   v1.21.1   172.19.0.2 
 ik8s-worker2         Ready    <none>                 10m   v1.21.1   172.19.0.3    <none>        Ubuntu 21.04   5.15.49-linuxkit   containerd://1.5.2
 ```
 
-### load images
+### Load images
 
-load the image into the hold. If the image does not exist locally, `docker pull` can be used
+Load the image into the kind container. If the image does not exist locally, `docker pull` can be used to pull images
 
 ```bash
 ➜  charts git:(master) kind load docker-image fishpro3/access:v1.0 nginx:stable --name ik8s
@@ -63,7 +63,7 @@ Image: "nginx:stable" with ID "sha256:8c9eabeac475449c72ad457ccbc014788a02dbbc64
 Image: "nginx:stable" with ID "sha256:8c9eabeac475449c72ad457ccbc014788a02dbbc64f24158b0a40fdc5def2dc9" not yet present on node "ik8s-worker2", loading...
 ```
 
-### create nginx application
+### Create nginx application
 
 Create an nginx application and expose the service using `NodePort`
 
@@ -73,7 +73,7 @@ pod/nginx created
 service/nginx-service created
 ```
 
-Log in to ik8s-worker2 and access services exposed on ik8s-worker1 NodePort. The services are successfully accessed
+Login to `ik8s-worker2` and access services exposed on `ik8s-worker1 NodePort`. The services are successfully accessed
 
 ```bash
 ➜  charts git:(master) ✗ docker exec -it ik8s-worker2 /bin/bash
@@ -104,7 +104,7 @@ Commercial support is available at
 ```
 
 
-### install Access
+### Install Access
 
 ```bash
 ➜  charts git:(master) ✗ kubectl create ns access-system
@@ -123,7 +123,7 @@ access-lpqm9   1/1     Running   0          4m32s
 
 ### apply access control rule
 
-An delivery control policy is applied to deny IP 172.19.0.3(ik8s-worker2) access to the ik8s-worker node
+An delivery control policy is applied to deny IP `172.19.0.3`(`ik8s-worker2`) access to the `ik8s-worker` node
 
 ```bash
 ➜  charts git:(master) ✗ cat << EOF | kubectl create -f -
@@ -139,7 +139,7 @@ EOF
 access.sample.access.io/demo created
 ```
 
-After the rule application is created, you can view the rule application status
+After the access object is created, you can view the access's status
 
 ```bash
 ➜  charts git:(master) ✗ kubectl get access demo -o yaml
@@ -163,7 +163,7 @@ status:
 
 ### validation rule
 
-Login test whether the rule is successfully applied
+Login to `ik8s-worker2` test whether the access rule is successfully applied
 
 ```bash
 ➜  charts git:(master) ✗ docker exec -it ik8s-worker2 /bin/bash
@@ -171,11 +171,11 @@ root@ik8s-worker2:/# curl 172.19.0.2:30100
 curl: (28) Failed to connect to 172.19.0.2 port 30100: Connection timed out
 ```
 
-You can find that the access times out, so the policy is successfully applied
+We can find that the access service times out, so the access control rule is successfully applied
 
 ## Ability
 
-+ Blacklist the IP addresses of native resource management nodes using kubernetes
++ Blacklist of management node IP addresses by kubernetes native resource
 
 ## What's Next
 
