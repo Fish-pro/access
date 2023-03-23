@@ -123,7 +123,8 @@ access-lpqm9   1/1     Running   0          4m32s
 
 ### apply access control rule
 
-An delivery control policy is applied to deny IP `172.19.0.3`(`ik8s-worker2`) access to the `ik8s-worker` node
+An access control rule is applied to deny IP `172.19.0.3`(`ik8s-worker2`) access to the `ik8s-worker` node.
+Currently, `nodeName` and `nodeSelector` are supported to select nodes
 
 ```bash
 ➜  charts git:(master) ✗ cat << EOF | kubectl create -f -
