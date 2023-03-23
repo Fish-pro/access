@@ -1,6 +1,6 @@
 # Access control
 
-Access control is a node access controller running on kubernetes, Access currently implements the ability to customize the IP blacklist of resource management nodes. If the NIC driver supports it, the access package can be dropped directly from the NIC. Of course, it will run in the XDP generic mode if there is no specific network card supported, but it is important to note that Access currently supports only a specific individual network card. See [Quick Start](## Quick Start) for details
+Access control is a node access controller running on kubernetes, Access currently implements the ability to customize the IP blacklist of resource management nodes. If the NIC driver supports it, the access package can be dropped directly from the NIC. Of course, it will run in the XDP generic mode if there is no specific network card supported, but it is important to note that Access currently supports only a specific individual network card. See [Quick Start](https://github.com/Fish-pro/access) for details
 
 ## Architecture
 
@@ -139,26 +139,6 @@ EOF
 access.sample.access.io/demo created
 ```
 
-```bash
-➜  charts git:(master) ✗ kubectl get access demo -o yaml
-apiVersion: sample.access.io/v1alpha1
-kind: Access
-metadata:
-  creationTimestamp: "2023-03-23T08:00:13Z"
-  generation: 1
-  name: demo
-  resourceVersion: "2400"
-  uid: a42822d5-13cd-48c4-8c02-3fb4c7e684a9
-spec:
-  ips:
-  - 172.19.0.3
-  nodeName: ik8s-worker
-status:
-  nodeStatuses:
-    ik8s-worker:
-    - 172.19.0.3
-```
-
 After the rule application is created, you can view the rule application status
 
 ```bash
@@ -195,7 +175,7 @@ You can find that the access times out, so the policy is successfully applied
 
 ## Ability
 
-+ Node IP blacklist access control by kubernetes native resource
++ Blacklist the IP addresses of native resource management nodes using kubernetes
 
 ## What's Next
 
