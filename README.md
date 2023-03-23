@@ -195,7 +195,7 @@ You can find that the access times out, so the policy is successfully applied
 
 ## Ability
 
-+ Node IP blacklist access control by kubernetes native resource
++ Blacklist the IP addresses of native resource management nodes using kubernetes
 
 ## What's Next
 
