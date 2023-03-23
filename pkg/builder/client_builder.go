@@ -48,7 +48,7 @@ type SimpleAccessControllerClientBuilder struct {
 	clientbuilder.SimpleControllerClientBuilder
 }
 
-// AccessClient returns a mcaversioned.Interface built from the ClientBuilder
+// AccessClient returns a versioned.Interface built from the ClientBuilder
 func (b SimpleAccessControllerClientBuilder) AccessClient(name string) (accessversioned.Interface, error) {
 	clientConfig, err := b.Config(name)
 	if err != nil {
@@ -57,7 +57,7 @@ func (b SimpleAccessControllerClientBuilder) AccessClient(name string) (accessve
 	return accessversioned.NewForConfig(clientConfig)
 }
 
-// AccessClientOrDie returns a mcaversioned.interface built from the ClientBuilder with no error.
+// AccessClientOrDie returns a versioned.interface built from the ClientBuilder with no error.
 // If it gets an error getting the client, it will log the error and kill the process it's running in.
 func (b SimpleAccessControllerClientBuilder) AccessClientOrDie(name string) accessversioned.Interface {
 	client, err := b.AccessClient(name)
