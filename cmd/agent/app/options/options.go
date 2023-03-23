@@ -17,8 +17,6 @@ limitations under the License.
 package options
 
 import (
-	"github.com/access-io/access/cmd/agent/app/config"
-	"github.com/access-io/access/pkg/builder"
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
@@ -29,6 +27,9 @@ import (
 	"k8s.io/component-base/logs"
 	logsapi "k8s.io/component-base/logs/api/v1"
 	"k8s.io/component-base/metrics"
+
+	"github.com/access-io/access/cmd/agent/app/config"
+	"github.com/access-io/access/pkg/builder"
 )
 
 const (
