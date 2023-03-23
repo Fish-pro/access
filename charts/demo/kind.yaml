@@ -1,0 +1,20 @@
+kind: Cluster
+apiVersion: "kind.x-k8s.io/v1alpha4"
+networking:
+  podSubnet: "10.244.0.0/16"
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30100
+        hostPort: 41101
+        listenAddress: "0.0.0.0"
+  - role: worker
+    extraPortMappings:
+      - containerPort: 30100
+        hostPort: 41102
+        listenAddress: "0.0.0.0"
+  - role: worker
+    extraPortMappings:
+      - containerPort: 30100
+        hostPort: 41103
+        listenAddress: "0.0.0.0"
