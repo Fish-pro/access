@@ -262,6 +262,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 				return err
 			}
 		}
+		return nil
 	}
 
 	if len(access.Spec.IPs) == 0 {
