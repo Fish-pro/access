@@ -60,7 +60,7 @@ const (
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries          = 15
-	controllerAgentName = "access-agent"
+	ControllerAgentName = "access-agent"
 )
 
 var defaultValue = uint32(1)
@@ -115,8 +115,8 @@ func NewController(
 		nodeSynced:       nodeInformer.Informer().HasSynced,
 		nodeName:         types.NodeName(strings.ToLower(hostname)),
 		eventBroadcaster: eventBroadcaster,
-		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerAgentName}),
-		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
+		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: ControllerAgentName}),
+		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), ControllerAgentName),
 	}
 
 	logger.Info("Setting up event handlers")
@@ -152,8 +152,8 @@ func (c *Controller) Run(ctx context.Context) {
 
 	logger := klog.FromContext(ctx)
 	// Start the informer factories to begin populating the informer caches
-	logger.Info("Starting controller", "controller", controllerAgentName)
-	defer logger.Info("Shutting down controller", "controller", controllerAgentName)
+	logger.Info("Starting controller", "controller", ControllerAgentName)
+	defer logger.Info("Shutting down controller", "controller", ControllerAgentName)
 
 	// Wait for the caches to be synced before starting worker
 	logger.Info("Waiting for informer caches to sync")
@@ -174,7 +174,6 @@ func (c *Controller) runWorker(ctx context.Context) {
 	}
 }
 
-// if resource change, run this func to count resources
 func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := c.queue.Get()
 	if quit {
@@ -236,6 +235,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 	access := a.DeepCopy()
 
+	// The reason for not checking before enqueuing is that the cache is not complete before enqueuing
 	node, err := c.nodeLister.Get(string(c.nodeName))
 	if err != nil {
 		logger.Error(err, "Failed to get node by node lister")
@@ -249,6 +249,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		}
 	}
 
+	// The standard implementation is to use the Finalizer control, there is simple here
 	if !access.DeletionTimestamp.IsZero() {
 		for _, ip := range access.Spec.IPs {
 			long, err := linux.IPString2Long(ip)
@@ -281,7 +282,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		}
 	}
 
-	// list ips in node
+	// Obtain the latest access rule status
 	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
 		logger.Error(err, "Failed to list ebpf map", "access", name)
@@ -301,7 +302,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	return c.updateAccessStatusInNeed(ctx, access, newStatus)
 }
 
-// updateAccessStatusInNeed update status if you need
+// updateAccessStatusInNeed update status if we need
 func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
 	logger := klog.FromContext(ctx)
 	if !equality.Semantic.DeepEqual(access.Status, status) {
@@ -324,7 +325,7 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 	return nil
 }
 
-// cannot find resource kind from obj,so we need case all gvr
+// If nodeName is used, it is not queued if there is no match
 func (c *Controller) enqueue(logger klog.Logger, obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
 	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
