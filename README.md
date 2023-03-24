@@ -1,6 +1,6 @@
 # Access control
 
-Access control is a node access controller running on kubernetes, which is based on the [EBPF](https://ebpf.io) implementation. Access currently implements the ability to customize the IP blacklist of resource management nodes. If the NIC driver supports it, the access package can be dropped directly on the NIC. Of course, it will run in the XDP generic mode if there is no specific NIC supported, but it is important to note that Access currently supports only a specific NIC name . See [Quick Start](#Quick Start) for details
+Access control is a node access controller running on kubernetes, which is based on the [EBPF](https://ebpf.io) implementation. Access currently implements the ability to customize the IP blacklist of resource management nodes. If the NIC driver supports it, the access package can be dropped directly on the NIC. Of course, it will run in the XDP generic mode if there is no specific NIC supported, but it is important to note that Access currently supports only a specific NIC name . See [Quick Start](https://github.com/Fish-pro/access) for details
 
 ## Architecture
 
