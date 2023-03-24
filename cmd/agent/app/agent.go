@@ -53,6 +53,8 @@ func NewAgentCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "access-agent",
+		Long: `The access-agent is the agent of cluster nodes. It is responsible for writing the access rules
+to the ebpf map of the node, as well as getting the state of the access rules that the node has applied.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			verflag.PrintAndExitIfRequested()
 			// Activate logging as soon as possible, after that
