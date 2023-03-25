@@ -54,9 +54,9 @@ import (
 )
 
 const (
-	// maxRetries is the number of times a deployment will be retried before it is dropped out of the queue.
+	// maxRetries is the number of times access will be retried before it is dropped out of the queue.
 	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
-	// a deployment is going to be requeued:
+	// access is going to be requeued:
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries          = 15
@@ -205,7 +205,7 @@ func (c *Controller) handleErr(ctx context.Context, err error, key interface{}) 
 	}
 
 	utilruntime.HandleError(err)
-	logger.V(2).Info("Dropping access out of the queue", "deployment", klog.KRef(ns, name), "err", err)
+	logger.V(2).Info("Dropping access out of the queue", "access", klog.KRef(ns, name), "err", err)
 	c.queue.Forget(key)
 }
 
@@ -330,7 +330,7 @@ func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *acces
 func (c *Controller) enqueue(logger klog.Logger, obj interface{}) {
 	access := obj.(*accessv1alpha1.Access)
 	if len(access.Spec.NodeName) != 0 && access.Spec.NodeName != string(c.nodeName) {
-		logger.V(4).Info("Access not match nodeName", "access", access.Name, "node", c.nodeName)
+		logger.V(4).Info("Access nodeName not match node", "access", access.Name, "node", c.nodeName)
 		return
 	}
 
