@@ -47,7 +47,7 @@ type completedConfig struct {
 
 // CompletedConfig same as Config, just to swap private object.
 type CompletedConfig struct {
-	// Embed a private pointer that cannot be instantiated outside of this package.
+	// Embed a private pointer that cannot be instantiated outside this package.
 	*completedConfig
 }
 
