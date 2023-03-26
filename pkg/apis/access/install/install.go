@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package install installs the install API group, making it available as
-// an option to all of the API encoding/decoding machinery.
+// Package installs the access API group, making it available as
+// an option to all of API encoding/decoding machinery.
 package install
 
 import (
