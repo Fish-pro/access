@@ -284,17 +284,17 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 
 	// Obtain the latest access rule status
-	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
-	if err != nil {
-		logger.Error(err, "Failed to list ebpf map", "access", name)
-		return err
-	}
-
 	newStatus := accessv1alpha1.AccessStatus{
 		NodeStatus: make(map[string][]string),
 	}
 	for k, v := range access.Status.NodeStatus {
 		newStatus.NodeStatus[k] = v
+	}
+
+	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
+	if err != nil {
+		logger.Error(err, "Failed to list ebpf map", "access", name)
+		return err
 	}
 	newStatus.NodeStatus[string(c.nodeName)] = ips
 
