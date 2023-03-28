@@ -39,7 +39,7 @@ import (
 	"github.com/access-io/access/bpf/blips"
 	"github.com/access-io/access/cmd/agent/app/config"
 	"github.com/access-io/access/cmd/agent/app/options"
-	accessctr "github.com/access-io/access/pkg/controllers/access"
+	accessctrl "github.com/access-io/access/pkg/controllers/access"
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions"
 )
 
@@ -127,7 +127,7 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
 	accessInformerFactory := accessinformers.NewSharedInformerFactory(c.AClient, time.Second*30)
 
 	// new controller
-	controller, err := accessctr.NewController(
+	controller, err := accessctrl.NewController(
 		ctx,
 		c.Client,
 		c.AClient,
