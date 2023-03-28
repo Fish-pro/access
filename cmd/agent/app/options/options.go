@@ -57,19 +57,17 @@ func NewAgentOptions() *AgentOptions {
 }
 
 // Config return a controller config objective
-func (s *AgentOptions) Config() (*config.Config, error) {
-	kubeconfig, err := clientcmd.BuildConfigFromFlags(s.Master, s.Kubeconfig)
+func (o *AgentOptions) Config() (*config.Config, error) {
+	kubeconfig, err := clientcmd.BuildConfigFromFlags(o.Master, o.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
-
 	client, err := clientset.NewForConfig(restclient.AddUserAgent(kubeconfig, ControllerUserAgent))
 	if err != nil {
 		return nil, err
 	}
 
 	clientBuilder := builder.NewSimpleAccessControllerClientBuilder(kubeconfig)
-
 	eventBroadcaster := record.NewBroadcaster()
 	eventRecorder := eventBroadcaster.NewRecorder(clientgokubescheme.Scheme, v1.EventSource{Component: ControllerUserAgent})
 
@@ -79,25 +77,25 @@ func (s *AgentOptions) Config() (*config.Config, error) {
 		Kubeconfig:       kubeconfig,
 		EventBroadcaster: eventBroadcaster,
 		EventRecorder:    eventRecorder,
-		Device:           s.Device,
+		Device:           o.Device,
 	}
 
-	s.Metrics.Apply()
+	o.Metrics.Apply()
 
 	return c, nil
 }
 
 // Flags returns flags for a specific APIServer by section name
-func (s *AgentOptions) Flags() cliflag.NamedFlagSets {
+func (o *AgentOptions) Flags() cliflag.NamedFlagSets {
 	fss := cliflag.NamedFlagSets{}
 
-	s.Metrics.AddFlags(fss.FlagSet("metrics"))
-	logsapi.AddFlags(s.Logs, fss.FlagSet("logs"))
+	o.Metrics.AddFlags(fss.FlagSet("metrics"))
+	logsapi.AddFlags(o.Logs, fss.FlagSet("logs"))
 
 	fs := fss.FlagSet("misc")
-	fs.StringVar(&s.Master, "master", s.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig).")
-	fs.StringVar(&s.Kubeconfig, "kubeconfig", s.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
-	fs.StringVar(&s.Device, "device", "eth0", "The Device define the network device name(default eth0).")
+	fs.StringVar(&o.Master, "master", o.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig).")
+	fs.StringVar(&o.Kubeconfig, "kubeconfig", o.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
+	fs.StringVar(&o.Device, "device", "eth0", "The Device define the network device name(default eth0).")
 
 	return fss
 }

@@ -48,6 +48,7 @@ func init() {
 	utilruntime.Must(features.AddFeatureGates(utilfeature.DefaultMutableFeatureGate))
 }
 
+// NewAgentCommand returns the agent root command
 func NewAgentCommand() *cobra.Command {
 	o := options.NewAgentOptions()
 
