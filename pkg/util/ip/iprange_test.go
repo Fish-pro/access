@@ -50,6 +50,13 @@ func TestParseIPRange(t *testing.T) {
 				net.ParseIP("10.244.2.2"),
 			},
 		},
+		{
+			name: "case 2",
+			args: "10.244.1.2",
+			want: []net.IP{
+				net.ParseIP("10.244.1.2"),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
