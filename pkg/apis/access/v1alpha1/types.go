@@ -46,7 +46,7 @@ type AccessList struct {
 
 // AccessSpec defines the desired state of Access
 type AccessSpec struct {
-	// IPs define the blacklist ips
+	// IPs define the blacklist ips，the Ip range mode is supported
 	// +required
 	IPs []string `json:"ips"`
 
