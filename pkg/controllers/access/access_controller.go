@@ -19,6 +19,7 @@ package access
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -50,6 +51,7 @@ import (
 	accessinformers "github.com/access-io/access/pkg/generated/informers/externalversions/access/v1alpha1"
 	accesslisters "github.com/access-io/access/pkg/generated/listers/access/v1alpha1"
 	"github.com/access-io/access/pkg/util/ebpfmap"
+	iputil "github.com/access-io/access/pkg/util/ip"
 	"github.com/access-io/access/pkg/util/linux"
 )
 
@@ -249,10 +251,20 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		}
 	}
 
+	var ips []net.IP
+	for _, ip := range access.Spec.IPs {
+		ips = append(ips, iputil.ParseIPRange(ip)...)
+	}
+
+	if len(ips) == 0 {
+		logger.Error(err, "Access IPs is nil", "access", name)
+		return nil
+	}
+
 	// The standard implementation is to use the Finalizer control, there is simple here
 	if !access.DeletionTimestamp.IsZero() {
-		for _, ip := range access.Spec.IPs {
-			long, err := linux.IPString2Long(ip)
+		for _, ip := range ips {
+			long, err := linux.IP2Long(ip)
 			if err != nil {
 				logger.Error(err, "Failed to convert ip addr", "access", name, "ip", ip)
 				return err
@@ -265,14 +277,9 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return nil
 	}
 
-	if len(access.Spec.IPs) == 0 {
-		logger.Error(err, "Access IPs is nil", "access", name)
-		return nil
-	}
-
 	// write rule to ebpf map
-	for _, ip := range access.Spec.IPs {
-		long, err := linux.IPString2Long(ip)
+	for _, ip := range ips {
+		long, err := linux.IP2Long(ip)
 		if err != nil {
 			logger.Error(err, "Failed to convert ip addr", "access", name, "ip", ip)
 			return err
@@ -291,12 +298,12 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		newStatus.NodeStatus[k] = v
 	}
 
-	ips, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
+	gotIps, err := ebpfmap.ListMapKey(c.engine.BpfObjs.XdpStatsMap)
 	if err != nil {
 		logger.Error(err, "Failed to list ebpf map", "access", name)
 		return err
 	}
-	newStatus.NodeStatus[string(c.nodeName)] = ips
+	newStatus.NodeStatus[string(c.nodeName)] = gotIps
 
 	logger.Info("Get access status", "access", name, "status", newStatus)
 

@@ -36,7 +36,7 @@ spec:
             description: AccessSpec defines the desired state of Access
             properties:
               ips:
-                description: IPs define the blacklist ips
+                description: IPs define the blacklist ips，the Ip range mode is supported
                 items:
                   type: string
                 type: array

@@ -21,8 +21,8 @@ import (
 	"net"
 )
 
-func IPString2Long(ip string) (uint, error) {
-	b := net.ParseIP(ip).To4()
+func IP2Long(ip net.IP) (uint, error) {
+	b := ip.To4()
 	if b == nil {
 		return 0, fmt.Errorf("invalid ipv4 format")
 	}
