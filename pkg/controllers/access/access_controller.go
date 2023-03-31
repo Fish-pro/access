@@ -307,11 +307,11 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	logger.Info("Get access status", "access", name, "status", newStatus)
 
-	return c.updateAccessStatusInNeed(ctx, access, newStatus)
+	return c.updateAccessStatusIfNeed(ctx, access, newStatus)
 }
 
-// updateAccessStatusInNeed update status if we need
-func (c *Controller) updateAccessStatusInNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
+// updateAccessStatusIfNeed update status if we need
+func (c *Controller) updateAccessStatusIfNeed(ctx context.Context, access *accessv1alpha1.Access, status accessv1alpha1.AccessStatus) error {
 	logger := klog.FromContext(ctx)
 	if !equality.Semantic.DeepEqual(access.Status, status) {
 		access.Status = status
