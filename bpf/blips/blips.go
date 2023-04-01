@@ -40,12 +40,12 @@ func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
 	// Look up the network interface by name.
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to look up network interface: %w", err)
+		return nil, err
 	}
 
 	objs := bpfObjects{}
 	if err := loadBpfObjects(&objs, nil); err != nil {
-		return nil, fmt.Errorf("failed to load objects: %s", err)
+		return nil, err
 	}
 
 	// Attach the program.
@@ -54,7 +54,7 @@ func NewEbpfEngine(ifaceName string) (*EbpfEngine, error) {
 		Interface: iface.Index,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not attach XDP program: %w", err)
+		return nil, err
 	}
 	return &EbpfEngine{BpfObjs: objs, Link: l}, nil
 }
