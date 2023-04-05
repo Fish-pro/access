@@ -2,13 +2,34 @@
 linters:
   disable-all: true
   enable:
+    - asciicheck
+    - bodyclose
+    - depguard
+    - dogsled
+    # - errcheck
+    - errorlint
+    - exportloopref
+    # - gci
     - goconst
+    - gocritic
+    - gocyclo
     - gofmt
     - goimports
     - goprintffuncname
+    # - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
     - nilerr
+    - nolintlint
+    - prealloc
+    - staticcheck
     - stylecheck
+    - typecheck
     - unconvert
+    - unparam
     - unused
     - usestdlibvars
     - whitespace

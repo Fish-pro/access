@@ -343,7 +343,7 @@ func (c *Controller) enqueue(logger klog.Logger, obj interface{}) {
 
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", access, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", access, err))
 		return
 	}
 
