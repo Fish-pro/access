@@ -22,12 +22,10 @@ import (
 	"strings"
 )
 
-// intToIP converts big.Int to net.IP.
 func intToIP(i *big.Int) net.IP {
 	return net.IP(i.Bytes()).To16()
 }
 
-// ipToInt converts net.IP to big.Int.
 func ipToInt(ip net.IP) *big.Int {
 	if v := ip.To4(); v != nil {
 		return big.NewInt(0).SetBytes(v)
@@ -35,16 +33,11 @@ func ipToInt(ip net.IP) *big.Int {
 	return big.NewInt(0).SetBytes(ip.To16())
 }
 
-// NextIP returns the next IP address.
 func NextIP(ip net.IP) net.IP {
 	i := ipToInt(ip)
 	return intToIP(i.Add(i, big.NewInt(1)))
 }
 
-// Cmp compares two IP addresses, returns according to the following rules:
-// ip1 < ip2: -1
-// ip1 = ip2: 0
-// ip1 > ip2: 1
 func Cmp(ip1, ip2 net.IP) int {
 	int1 := ipToInt(ip1)
 	int2 := ipToInt(ip2)
